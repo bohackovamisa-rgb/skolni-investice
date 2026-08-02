@@ -22,6 +22,7 @@ def hezke_kusy(hodnota):
 # --- PAMĚŤ APLIKACE ---
 if "prihlasen" not in st.session_state:
     st.session_state["prihlasen"] = False
+    st.session_state["nick"] = ""
     st.session_state["jmeno"] = ""
     st.session_state["role"] = "ZAK"
     st.session_state["trida"] = ""
@@ -69,25 +70,27 @@ if not st.session_state["prihlasen"]:
     tab1, tab2 = st.tabs(["🔐 Přihlášení", "📝 Nová registrace"])
 
     with tab1:
-        login_jmeno = st.text_input("Jméno (přesně jako v tabulce):")
+        login_nick = st.text_input("Přezdívka (Nick / Login):").strip()
         login_pin = st.text_input("PIN:", type="password")
         if st.button("Přihlásit se"):
             zaznamy = db_uzivatele.get_all_records(value_render_option="UNFORMATTED_VALUE")
             nalezen = False
             for radek in zaznamy:
-                if str(radek.get("Jmeno", "")) == login_jmeno and str(radek.get("PIN", "")) == login_pin:
+                if str(radek.get("Nick", "")).strip().lower() == login_nick.lower() and str(radek.get("PIN", "")) == login_pin:
                     nalezen = True
                     st.session_state["prihlasen"] = True
-                    st.session_state["jmeno"] = login_jmeno
+                    st.session_state["nick"] = str(radek.get("Nick", "")).strip()
+                    st.session_state["jmeno"] = str(radek.get("Jmeno", "")).strip()
                     st.session_state["role"] = str(radek.get("Role", "ZAK")).upper()
                     st.session_state["trida"] = str(radek.get("Trida", "")).strip().upper()
                     st.session_state["zustatek"] = bezpecny_float(radek.get("Zustatek", 0))
                     st.rerun()
             if not nalezen:
-                st.error("Chybné jméno nebo PIN.")
+                st.error("Chybná přezdívka nebo PIN.")
 
     with tab2:
-        reg_jmeno = st.text_input("Tvé jméno / Jméno učitele:")
+        reg_nick = st.text_input("Přezdívka (Nick pro přihlášení):").strip()
+        reg_jmeno = st.text_input("Celé jméno a příjmení:").strip()
         je_ucitel = st.checkbox("👩‍🏫 Zaregistrovat se jako UČITEL")
         
         if je_ucitel:
@@ -100,24 +103,24 @@ if not st.session_state["prihlasen"]:
         reg_pin = st.text_input("Vymysli si osobní PIN:", type="password")
         
         if st.button("Zaregistrovat se"):
-            # Očistíme zadané heslo od uvozovek a mezer pro případ překlepu
             zadane_heslo_ciste = tajny_kod_input.strip().strip('"').strip("'")
-            
-            # Povolíme hesla: Ucitel2026, Ucitel123 nebo cokoliv nastaveného v Secrets
             heslo_ze_secrets = str(st.secrets.get("ucitelske_heslo", "Ucitel2026")).strip().strip('"').strip("'")
             povolena_hesla = [heslo_ze_secrets, "Ucitel2026", "Ucitel123"]
             
-            if not reg_jmeno or not reg_pin or (not je_ucitel and not reg_trida):
+            if not reg_nick or not reg_jmeno or not reg_pin or (not je_ucitel and not reg_trida):
                 st.warning("⚠️ Vyplň prosím všechny potřebné údaje.")
             elif je_ucitel and zadane_heslo_ciste not in povolena_hesla:
                 st.error("❌ Nesprávné učitelské heslo! Registrace jako učitel byla zamítnuta.")
             else:
                 zaznamy = db_uzivatele.get_all_records(value_render_option="UNFORMATTED_VALUE")
-                if reg_jmeno in [str(r.get("Jmeno", "")) for r in zaznamy]:
-                    st.error("Toto jméno už v databázi existuje.")
+                existujici_nicky = [str(r.get("Nick", "")).strip().lower() for r in zaznamy]
+                
+                if reg_nick.lower() in existujici_nicky:
+                    st.error("⚠️ Tato přezdívka (Nick) už je zabraná. Zvol si prosím jinou.")
                 else:
                     role_str = "UCITEL" if je_ucitel else "ZAK"
-                    db_uzivatele.append_row([role_str, reg_jmeno, reg_trida, reg_pin, 20000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+                    # Sloupce: Role, Nick, Jmeno, Trida, PIN, Zustatek, AAPL, TSLA...
+                    db_uzivatele.append_row([role_str, reg_nick, reg_jmeno, reg_trida, reg_pin, 20000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
                     st.success("Účet úspěšně vytvořen! Nyní se můžeš přihlásit na záložce Přihlášení.")
 
 # ==========================================
@@ -127,6 +130,7 @@ elif st.session_state["role"] == "UCITEL":
     sloupec1, sloupec2 = st.columns([3, 1])
     with sloupec1:
         st.title(f"👩‍🏫 Učitelský panel: {st.session_state['jmeno']}")
+        st.caption(f"Nick: {st.session_state['nick']}")
     with sloupec2:
         if st.button("Odhlásit se"):
             st.session_state["prihlasen"] = False
@@ -136,7 +140,6 @@ elif st.session_state["role"] == "UCITEL":
     
     vsechna_data = db_uzivatele.get_all_records(value_render_option="UNFORMATTED_VALUE")
     
-    # Zjistíme VŠECHNY třídy existující v databázi od žáků
     vsechny_dostupne_tridy = sorted(list(set([str(r.get("Trida", "")).strip().upper() for r in vsechna_data if r.get("Trida") and str(r.get("Role","")).upper() != "UCITEL"])))
     moje_ulozene_tridy = [t.strip() for t in st.session_state["trida"].split(",") if t.strip()]
     
@@ -145,8 +148,8 @@ elif st.session_state["role"] == "UCITEL":
         vybrane_tridy_ucitele = st.multiselect("Moje třídy:", vsechny_dostupne_tridy, default=[t for t in moje_ulozene_tridy if t in vsechny_dostupne_tridy])
         if st.button("Uložit moje třídy"):
             nove_tridy_str = ", ".join(vybrane_tridy_ucitele)
-            jmena_sloupec = db_uzivatele.col_values(2) # Sloupec B je Jmeno
-            cislo_radku = jmena_sloupec.index(st.session_state["jmeno"]) + 1
+            nicky_sloupec = db_uzivatele.col_values(2) # Sloupec B je Nick
+            cislo_radku = nicky_sloupec.index(st.session_state["nick"]) + 1
             hlavicky = db_uzivatele.row_values(1)
             cislo_sloupce_trida = hlavicky.index("Trida") + 1
             
@@ -180,7 +183,8 @@ elif st.session_state["role"] == "UCITEL":
                     
                     for radek in zaci_tridy:
                         jmeno_zaka = str(radek.get("Jmeno", ""))
-                        if not jmeno_zaka:
+                        nick_zaka = str(radek.get("Nick", ""))
+                        if not jmeno_zaka and not nick_zaka:
                             continue
                         
                         zustatek_zaka = bezpecny_float(radek.get("Zustatek", 0))
@@ -193,7 +197,7 @@ elif st.session_state["role"] == "UCITEL":
                         
                         zisk_zaka = majetek_zaka - 20000.0
                         zebricek_data.append({
-                            "Žák": jmeno_zaka,
+                            "Žák": f"{jmeno_zaka} ({nick_zaka})",
                             "Celkový majetek (Kč)": round(majetek_zaka, 2),
                             "Zisk / Ztráta (Kč)": round(zisk_zaka, 2),
                             "Volná hotovost (Kč)": round(zustatek_zaka, 2)
@@ -211,19 +215,22 @@ elif st.session_state["role"] == "UCITEL":
 
         with tab_sprava_ucitel:
             st.subheader("🔑 Obnovení zapomenutého PINu")
-            zaci_v_tride = [str(r.get("Jmeno", "")) for r in vsechna_data if str(r.get("Trida", "")).strip().upper() == vybrana_trida and str(r.get("Role", "")).upper() != "UCITEL"]
+            zaci_v_tride = [f"{str(r.get('Jmeno', ''))} ({str(r.get('Nick', ''))})" for r in vsechna_data if str(r.get("Trida", "")).strip().upper() == vybrana_trida and str(r.get("Role", "")).upper() != "UCITEL"]
             
             if zaci_v_tride:
-                vybrany_zak = st.selectbox("Vyber žáka ze třídy " + vybrana_trida + ":", zaci_v_tride)
+                vybrany_zak_str = st.selectbox("Vyber žáka ze třídy " + vybrana_trida + ":", zaci_v_tride)
                 novy_pin = st.text_input("Nový PIN pro žáka:", value="1234")
+                
                 if st.button("Uložit nový PIN"):
-                    jmena_sloupec = db_uzivatele.col_values(2) # Sloupec B je Jmeno
-                    cislo_radku = jmena_sloupec.index(vybrany_zak) + 1
+                    # Extrahujeme nick z textu "Jmeno (Nick)"
+                    vybrany_nick = vybrany_zak_str.split("(")[-1].replace(")", "").strip()
+                    nicky_sloupec = [str(n).strip() for n in db_uzivatele.col_values(2)] # Sloupec B je Nick
+                    cislo_radku = nicky_sloupec.index(vybrany_nick) + 1
                     hlavicky = db_uzivatele.row_values(1)
                     cislo_sloupce_pin = hlavicky.index("PIN") + 1
                     
                     db_uzivatele.update_cell(cislo_radku, cislo_sloupce_pin, str(novy_pin))
-                    st.success(f"✅ PIN pro žáka {vybrany_zak} byl změněn na {novy_pin}!")
+                    st.success(f"✅ PIN pro žáka {vybrany_zak_str} byl změněn na {novy_pin}!")
             else:
                 st.caption("V této třídě zatím nejsou žádní žáci.")
 
@@ -234,7 +241,7 @@ else:
     sloupec1, sloupec2 = st.columns([3, 1])
     with sloupec1:
         st.title(f"Vítej, {st.session_state['jmeno']}! 👋")
-        st.caption(f"Třída: {st.session_state['trida']}")
+        st.caption(f"Nick: {st.session_state['nick']} | Třída: {st.session_state['trida']}")
     with sloupec2:
         if st.button("Odhlásit se"):
             st.session_state["prihlasen"] = False
@@ -244,7 +251,7 @@ else:
     tab_burza, tab_portfolio, tab_zebricek = st.tabs(["📈 Burza (Nákup/Prodej)", "💼 Moje Portfolio", "🏆 Žebříček mé třídy"])
     
     vsechna_data = db_uzivatele.get_all_records(value_render_option="UNFORMATTED_VALUE")
-    moje_data = next((r for r in vsechna_data if str(r.get("Jmeno", "")) == st.session_state["jmeno"]), None)
+    moje_data = next((r for r in vsechna_data if str(r.get("Nick", "")).strip().lower() == st.session_state["nick"].lower()), None)
     
     # ---------------- ZÁLOŽKA 1: BURZA ----------------
     with tab_burza:
@@ -293,8 +300,8 @@ else:
                                     novy_zustatek = round(st.session_state["zustatek"] - cena_koupit, 2)
                                     novy_stav_aktiva = round(stav_aktiva_ted + pocet_koupit, 4)
                                     
-                                    jmena_sloupec = db_uzivatele.col_values(2) # Sloupec B je Jmeno
-                                    cislo_radku = jmena_sloupec.index(st.session_state["jmeno"]) + 1
+                                    nicky_sloupec = [str(n).strip() for n in db_uzivatele.col_values(2)] # Sloupec B je Nick
+                                    cislo_radku = nicky_sloupec.index(st.session_state["nick"]) + 1
                                     hlavicky = db_uzivatele.row_values(1)
                                     cislo_sloupce_aktiva = hlavicky.index(sloupec_db) + 1
                                     cislo_sloupce_zustatek = hlavicky.index("Zustatek") + 1
@@ -304,7 +311,7 @@ else:
                                     
                                     if db_transakce:
                                         try:
-                                            db_transakce.append_row([st.session_state["jmeno"], "NÁKUP", vybrane_aktivum, pocet_koupit, cena_koupit])
+                                            db_transakce.append_row([st.session_state["nick"], "NÁKUP", vybrane_aktivum, pocet_koupit, cena_koupit])
                                         except:
                                             pass
                                     
@@ -327,8 +334,8 @@ else:
                                 novy_zustatek = round(st.session_state["zustatek"] + cena_prodat, 2)
                                 novy_stav_aktiva = round(stav_aktiva_ted - pocet_prodat, 4)
                                 
-                                jmena_sloupec = db_uzivatele.col_values(2)
-                                cislo_radku = jmena_sloupec.index(st.session_state["jmeno"]) + 1
+                                nicky_sloupec = [str(n).strip() for n in db_uzivatele.col_values(2)]
+                                cislo_radku = nicky_sloupec.index(st.session_state["nick"]) + 1
                                 hlavicky = db_uzivatele.row_values(1)
                                 cislo_sloupce_aktiva = hlavicky.index(sloupec_db) + 1
                                 cislo_sloupce_zustatek = hlavicky.index("Zustatek") + 1
@@ -338,7 +345,7 @@ else:
                                 
                                 if db_transakce:
                                     try:
-                                        db_transakce.append_row([st.session_state["jmeno"], "PRODEJ", vybrane_aktivum, pocet_prodat, cena_prodat])
+                                        db_transakce.append_row([st.session_state["nick"], "PRODEJ", vybrane_aktivum, pocet_prodat, cena_prodat])
                                     except:
                                         pass
                                 
@@ -412,7 +419,7 @@ else:
                 if db_transakce:
                     try:
                         vsechny_transakce = db_transakce.get_all_records()
-                        moje_transakce = [t for t in vsechny_transakce if str(t.get("Jmeno", "")) == st.session_state["jmeno"]]
+                        moje_transakce = [t for t in vsechny_transakce if str(t.get("Jmeno", "")) == st.session_state["nick"]]
                         
                         if moje_transakce:
                             df_transakce = pd.DataFrame(moje_transakce)[["Typ", "Aktivum", "Kusu", "Cena_CZK"]]
@@ -443,7 +450,8 @@ else:
                 
                 for radek in zaci_tridy:
                     jmeno_zaka = str(radek.get("Jmeno", ""))
-                    if not jmeno_zaka:
+                    nick_zaka = str(radek.get("Nick", ""))
+                    if not jmeno_zaka and not nick_zaka:
                         continue
                     
                     zustatek_zaka = bezpecny_float(radek.get("Zustatek", 0))
@@ -456,7 +464,7 @@ else:
                     
                     zisk_zaka = majetek_zaka - 20000.0
                     zebricek_data.append({
-                        "Žák": jmeno_zaka,
+                        "Žák": f"{jmeno_zaka} ({nick_zaka})",
                         "Celkový majetek (Kč)": round(majetek_zaka, 2),
                         "Zisk / Ztráta (Kč)": round(zisk_zaka, 2)
                     })
