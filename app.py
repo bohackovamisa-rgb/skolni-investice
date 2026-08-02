@@ -23,6 +23,8 @@ def hezke_kusy(hodnota):
 if "prihlasen" not in st.session_state:
     st.session_state["prihlasen"] = False
     st.session_state["jmeno"] = ""
+    st.session_state["role"] = "ZAK"
+    st.session_state["trida"] = ""
     st.session_state["zustatek"] = 0.0
 
 # --- PŘIPOJENÍ K DATABÁZI ---
@@ -77,42 +79,165 @@ if not st.session_state["prihlasen"]:
                     nalezen = True
                     st.session_state["prihlasen"] = True
                     st.session_state["jmeno"] = login_jmeno
+                    st.session_state["role"] = str(radek.get("Role", "ZAK")).upper()
+                    st.session_state["trida"] = str(radek.get("Trida", "")).strip().upper()
                     st.session_state["zustatek"] = bezpecny_float(radek.get("Zustatek", 0))
                     st.rerun()
             if not nalezen:
                 st.error("Chybné jméno nebo PIN.")
 
     with tab2:
-        reg_jmeno = st.text_input("Tvé jméno:")
-        reg_trida = st.text_input("Třída (např. 8.A, 9.B):").strip().upper()
-        reg_pin = st.text_input("Vymysli si PIN:", type="password")
+        reg_jmeno = st.text_input("Tvé jméno / Jméno učitele:")
+        je_ucitel = st.checkbox("👩‍🏫 Zaregistrovat se jako UČITEL")
         
-        if st.button("Zaregistrovat"):
-            if not reg_jmeno or not reg_trida or not reg_pin:
-                st.warning("⚠️ Vyplň prosím všechny údaje (jméno, třídu i PIN).")
+        if je_ucitel:
+            reg_trida = ""
+            tajny_kod_input = st.text_input("🔐 Zadej učitelské heslo (pro ověření):", type="password")
+        else:
+            reg_trida = st.text_input("Třída žáka (např. 8.A, 9.B):").strip().upper()
+            tajny_kod_input = ""
+            
+        reg_pin = st.text_input("Vymysli si osobní PIN:", type="password")
+        
+        if st.button("Zaregistrovat se"):
+            # Načtení učitelského hesla ze Secrets (výchozí záloha pokud v Secrets chybí)
+            spravne_ucitelske_heslo = st.secrets.get("ucitelske_heslo", "Ucitel123")
+            
+            if not reg_jmeno or not reg_pin or (not je_ucitel and not reg_trida):
+                st.warning("⚠️ Vyplň prosím všechny potřebné údaje.")
+            elif je_ucitel and tajny_kod_input != spravne_ucitelske_heslo:
+                st.error("❌ Nesprávné učitelské heslo! Registrace jako učitel byla zamítnuta.")
             else:
                 zaznamy = db_uzivatele.get_all_records(value_render_option="UNFORMATTED_VALUE")
                 if reg_jmeno in [str(r.get("Jmeno", "")) for r in zaznamy]:
-                    st.error("Toto jméno už existuje.")
+                    st.error("Toto jméno už v databázi existuje.")
                 else:
-                    # Sloupce: Jmeno, Trida, PIN, Zustatek, AAPL, TSLA...
-                    db_uzivatele.append_row([reg_jmeno, reg_trida, reg_pin, 20000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-                    st.success(f"Účet pro třídu {reg_trida} vytvořen! Nyní se můžeš přihlásit.")
+                    role_str = "UCITEL" if je_ucitel else "ZAK"
+                    db_uzivatele.append_row([role_str, reg_jmeno, reg_trida, reg_pin, 20000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+                    st.success("Účet úspěšně vytvořen! Nyní se můžeš přihlásit.")
 
 # ==========================================
-# --- B: OBRAZOVKA PRO PŘIHLÁŠENÉ ---
+# --- B: OBRAZOVKA PRO UČITELE ---
 # ==========================================
-else:
+elif st.session_state["role"] == "UCITEL":
     sloupec1, sloupec2 = st.columns([3, 1])
     with sloupec1:
-        st.title(f"Vítej, {st.session_state['jmeno']}! 👋")
+        st.title(f"👩‍🏫 Učitelský panel: {st.session_state['jmeno']}")
     with sloupec2:
         if st.button("Odhlásit se"):
             st.session_state["prihlasen"] = False
             st.rerun()
 
     st.divider()
-    tab_burza, tab_portfolio, tab_zebricek = st.tabs(["📈 Burza (Nákup/Prodej)", "💼 Moje Portfolio", "🏆 Žebříček třídy"])
+    
+    vsechna_data = db_uzivatele.get_all_records(value_render_option="UNFORMATTED_VALUE")
+    
+    # Zjistíme VŠECHNY třídy existující v databázi od žáků
+    vsechny_dostupne_tridy = sorted(list(set([str(r.get("Trida", "")).strip().upper() for r in vsechna_data if r.get("Trida") and str(r.get("Role","")).upper() != "UCITEL"])))
+    moje_ulozene_tridy = [t.strip() for t in st.session_state["trida"].split(",") if t.strip()]
+    
+    with st.expander("⚙️ Nastavení mé výuky (Vyberte si svoje třídy)"):
+        st.write("Zaškrtněte třídy, které učíte. Aplikace si volbu zapamatuje.")
+        vybrane_tridy_ucitele = st.multiselect("Moje třídy:", vsechny_dostupne_tridy, default=[t for t in moje_ulozene_tridy if t in vsechny_dostupne_tridy])
+        if st.button("Uložit moje třídy"):
+            nove_tridy_str = ", ".join(vybrane_tridy_ucitele)
+            jmena_sloupec = db_uzivatele.col_values(2) # Sloupec B je Jmeno
+            cislo_radku = jmena_sloupec.index(st.session_state["jmeno"]) + 1
+            hlavicky = db_uzivatele.row_values(1)
+            cislo_sloupce_trida = hlavicky.index("Trida") + 1
+            
+            db_uzivatele.update_cell(cislo_radku, cislo_sloupce_trida, nove_tridy_str)
+            st.session_state["trida"] = nove_tridy_str
+            st.success("✅ Seznam vašich tříd byl aktualizován!")
+            st.rerun()
+
+    tridy_k_zobrazeni = moje_ulozene_tridy if moje_ulozene_tridy else vsechny_dostupne_tridy
+    
+    if not tridy_k_zobrazeni:
+        st.info("Zatím se nezaregistrovali žádní žáci s uvedenou třídou.")
+    else:
+        vybrana_trida = st.selectbox("Zobrazit výsledky pro třídu:", tridy_k_zobrazeni)
+        
+        tab_zebricek_ucitel, tab_sprava_ucitel = st.tabs(["🏆 Přehled a výsledky třídy", "🔑 Správa žáků (Reset PINu)"])
+        
+        with tab_zebricek_ucitel:
+            with st.spinner(f"Načítám výsledky třídy {vybrana_trida}..."):
+                try:
+                    kurz_usd = yf.Ticker("CZK=X").history(period="1d")['Close'].iloc[-1]
+                    ceny_aktiv = {}
+                    for nazev, (ticker, mena, _) in AKTIVA.items():
+                        c = yf.Ticker(ticker).history(period="1d")['Close'].iloc[-1]
+                        if mena == "USD":
+                            c *= kurz_usd
+                        ceny_aktiv[nazev] = c
+                    
+                    zebricek_data = []
+                    zaci_tridy = [r for r in vsechna_data if str(r.get("Trida", "")).strip().upper() == vybrana_trida and str(r.get("Role", "")).upper() != "UCITEL"]
+                    
+                    for radek in zaci_tridy:
+                        jmeno_zaka = str(radek.get("Jmeno", ""))
+                        if not jmeno_zaka:
+                            continue
+                        
+                        zustatek_zaka = bezpecny_float(radek.get("Zustatek", 0))
+                        majetek_zaka = zustatek_zaka
+                        
+                        for nazev, (_, _, db_sloupec) in AKTIVA.items():
+                            ks = bezpecny_float(radek.get(db_sloupec, 0))
+                            if ks > 0 and nazev in ceny_aktiv:
+                                majetek_zaka += (ks * ceny_aktiv[nazev])
+                        
+                        zisk_zaka = majetek_zaka - 20000.0
+                        zebricek_data.append({
+                            "Žák": jmeno_zaka,
+                            "Celkový majetek (Kč)": round(majetek_zaka, 2),
+                            "Zisk / Ztráta (Kč)": round(zisk_zaka, 2),
+                            "Volná hotovost (Kč)": round(zustatek_zaka, 2)
+                        })
+                    
+                    if zebricek_data:
+                        df_zebricek = pd.DataFrame(zebricek_data)
+                        df_zebricek = df_zebricek.sort_values(by="Celkový majetek (Kč)", ascending=False).reset_index(drop=True)
+                        df_zebricek.index += 1
+                        st.dataframe(df_zebricek, use_container_width=True)
+                    else:
+                        st.info(f"Ve třídě {vybrana_trida} zatím nejsou zaregistrovaní žádní žáci.")
+                except Exception as e:
+                    st.error(f"Chyba při načítání dat: {e}")
+
+        with tab_sprava_ucitel:
+            st.subheader("🔑 Obnovení zapomenutého PINu")
+            zaci_v_tride = [str(r.get("Jmeno", "")) for r in vsechna_data if str(r.get("Trida", "")).strip().upper() == vybrana_trida and str(r.get("Role", "")).upper() != "UCITEL"]
+            
+            if zaci_v_tride:
+                vybrany_zak = st.selectbox("Vyber žáka ze třídy " + vybrana_trida + ":", zaci_v_tride)
+                novy_pin = st.text_input("Nový PIN pro žáka:", value="1234")
+                if st.button("Uložit nový PIN"):
+                    jmena_sloupec = db_uzivatele.col_values(2) # Sloupec B je Jmeno
+                    cislo_radku = jmena_sloupec.index(vybrany_zak) + 1
+                    hlavicky = db_uzivatele.row_values(1)
+                    cislo_sloupce_pin = hlavicky.index("PIN") + 1
+                    
+                    db_uzivatele.update_cell(cislo_radku, cislo_sloupce_pin, str(novy_pin))
+                    st.success(f"✅ PIN pro žáka {vybrany_zak} byl změněn na {novy_pin}!")
+            else:
+                st.caption("V této třídě zatím nejsou žádní žáci.")
+
+# ==========================================
+# --- C: OBRAZOVKA PRO ŽÁKY ---
+# ==========================================
+else:
+    sloupec1, sloupec2 = st.columns([3, 1])
+    with sloupec1:
+        st.title(f"Vítej, {st.session_state['jmeno']}! 👋")
+        st.caption(f"Třída: {st.session_state['trida']}")
+    with sloupec2:
+        if st.button("Odhlásit se"):
+            st.session_state["prihlasen"] = False
+            st.rerun()
+
+    st.divider()
+    tab_burza, tab_portfolio, tab_zebricek = st.tabs(["📈 Burza (Nákup/Prodej)", "💼 Moje Portfolio", "🏆 Žebříček mé třídy"])
     
     vsechna_data = db_uzivatele.get_all_records(value_render_option="UNFORMATTED_VALUE")
     moje_data = next((r for r in vsechna_data if str(r.get("Jmeno", "")) == st.session_state["jmeno"]), None)
@@ -164,12 +289,10 @@ else:
                                     novy_zustatek = round(st.session_state["zustatek"] - cena_koupit, 2)
                                     novy_stav_aktiva = round(stav_aktiva_ted + pocet_koupit, 4)
                                     
-                                    jmena_sloupec = db_uzivatele.col_values(1)
+                                    jmena_sloupec = db_uzivatele.col_values(2) # Sloupec B je Jmeno
                                     cislo_radku = jmena_sloupec.index(st.session_state["jmeno"]) + 1
                                     hlavicky = db_uzivatele.row_values(1)
                                     cislo_sloupce_aktiva = hlavicky.index(sloupec_db) + 1
-                                    
-                                    # Hledáme sloupec se zůstatkem (Zustatek)
                                     cislo_sloupce_zustatek = hlavicky.index("Zustatek") + 1
                                     
                                     db_uzivatele.update_cell(cislo_radku, cislo_sloupce_zustatek, novy_zustatek) 
@@ -200,7 +323,7 @@ else:
                                 novy_zustatek = round(st.session_state["zustatek"] + cena_prodat, 2)
                                 novy_stav_aktiva = round(stav_aktiva_ted - pocet_prodat, 4)
                                 
-                                jmena_sloupec = db_uzivatele.col_values(1)
+                                jmena_sloupec = db_uzivatele.col_values(2)
                                 cislo_radku = jmena_sloupec.index(st.session_state["jmeno"]) + 1
                                 hlavicky = db_uzivatele.row_values(1)
                                 cislo_sloupce_aktiva = hlavicky.index(sloupec_db) + 1
@@ -296,64 +419,51 @@ else:
                     except:
                         st.caption("Záznamy historie se nepodařilo načíst.")
 
-    # ---------------- ZÁLOŽKA 3: ŽEBŘÍČEK TŘÍDY ----------------
+    # ---------------- ZÁLOŽKA 3: ŽEBŘÍČEK ŽÁKA ----------------
     with tab_zebricek:
-        st.subheader("🏆 Průběžné pořadí")
+        moje_trida = st.session_state["trida"]
+        st.subheader(f"🏆 Pořadí ve třídě {moje_trida}")
         
-        # Zjistíme seznam všech tříd v databázi
-        vsechny_tridy = sorted(list(set([str(r.get("Trida", "")).strip().upper() for r in vsechna_data if r.get("Trida")])))
-        
-        if not vsechny_tridy:
-            st.info("Zatím nejsou v databázi žádné třídy.")
-        else:
-            # Výchozí vybraná třída bude třída přihlášeného žáka
-            moje_trida = str(moje_data.get("Trida", "")).strip().upper() if moje_data else vsechny_tridy[0]
-            index_moje_trida = vsechny_tridy.index(moje_trida) if moje_trida in vsechny_tridy else 0
-            
-            vybrana_trida = st.selectbox("Vyber třídu:", vsechny_tridy, index=index_moje_trida)
-            
-            with st.spinner(f"Spočítám majetek pro třídu {vybrana_trida}..."):
-                try:
-                    kurz_usd = yf.Ticker("CZK=X").history(period="1d")['Close'].iloc[-1]
-                    ceny_aktiv = {}
-                    for nazev, (ticker, mena, _) in AKTIVA.items():
-                        c = yf.Ticker(ticker).history(period="1d")['Close'].iloc[-1]
-                        if mena == "USD":
-                            c *= kurz_usd
-                        ceny_aktiv[nazev] = c
+        with st.spinner("Načítám pořadí..."):
+            try:
+                kurz_usd = yf.Ticker("CZK=X").history(period="1d")['Close'].iloc[-1]
+                ceny_aktiv = {}
+                for nazev, (ticker, mena, _) in AKTIVA.items():
+                    c = yf.Ticker(ticker).history(period="1d")['Close'].iloc[-1]
+                    if mena == "USD":
+                        c *= kurz_usd
+                    ceny_aktiv[nazev] = c
+                
+                zebricek_data = []
+                zaci_tridy = [r for r in vsechna_data if str(r.get("Trida", "")).strip().upper() == moje_trida and str(r.get("Role", "")).upper() != "UCITEL"]
+                
+                for radek in zaci_tridy:
+                    jmeno_zaka = str(radek.get("Jmeno", ""))
+                    if not jmeno_zaka:
+                        continue
                     
-                    zebricek_data = []
+                    zustatek_zaka = bezpecny_float(radek.get("Zustatek", 0))
+                    majetek_zaka = zustatek_zaka
                     
-                    # Filtrujeme pouze žáky z vybrané třídy
-                    zaci_tridy = [r for r in vsechna_data if str(r.get("Trida", "")).strip().upper() == vybrana_trida]
+                    for nazev, (_, _, db_sloupec) in AKTIVA.items():
+                        ks = bezpecny_float(radek.get(db_sloupec, 0))
+                        if ks > 0 and nazev in ceny_aktiv:
+                            majetek_zaka += (ks * ceny_aktiv[nazev])
                     
-                    for radek in zaci_tridy:
-                        jmeno_zaka = str(radek.get("Jmeno", ""))
-                        if not jmeno_zaka:
-                            continue
-                        
-                        zustatek_zaka = bezpecny_float(radek.get("Zustatek", 0))
-                        majetek_zaka = zustatek_zaka
-                        
-                        for nazev, (_, _, db_sloupec) in AKTIVA.items():
-                            ks = bezpecny_float(radek.get(db_sloupec, 0))
-                            if ks > 0 and nazev in ceny_aktiv:
-                                majetek_zaka += (ks * ceny_aktiv[nazev])
-                        
-                        zisk_zaka = majetek_zaka - 20000.0
-                        zebricek_data.append({
-                            "Žák": jmeno_zaka,
-                            "Celkový majetek (Kč)": round(majetek_zaka, 2),
-                            "Zisk / Ztráta (Kč)": round(zisk_zaka, 2)
-                        })
-                    
-                    if zebricek_data:
-                        df_zebricek = pd.DataFrame(zebricek_data)
-                        df_zebricek = df_zebricek.sort_values(by="Celkový majetek (Kč)", ascending=False).reset_index(drop=True)
-                        df_zebricek.index += 1
-                        st.dataframe(df_zebricek, use_container_width=True)
-                    else:
-                        st.caption("V této třídě zatím nejsou žádní žáci.")
-                    
-                except Exception as e:
-                    st.error(f"Při sestavování žebříčku došlo k chybě: {e}")
+                    zisk_zaka = majetek_zaka - 20000.0
+                    zebricek_data.append({
+                        "Žák": jmeno_zaka,
+                        "Celkový majetek (Kč)": round(majetek_zaka, 2),
+                        "Zisk / Ztráta (Kč)": round(zisk_zaka, 2)
+                    })
+                
+                if zebricek_data:
+                    df_zebricek = pd.DataFrame(zebricek_data)
+                    df_zebricek = df_zebricek.sort_values(by="Celkový majetek (Kč)", ascending=False).reset_index(drop=True)
+                    df_zebricek.index += 1
+                    st.dataframe(df_zebricek, use_container_width=True)
+                else:
+                    st.info("V tvé třídě zatím nikdo jiný není.")
+                
+            except Exception as e:
+                st.error(f"Při sestavování žebříčku došlo k chybě: {e}")
