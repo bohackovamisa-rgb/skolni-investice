@@ -84,19 +84,41 @@ else:
     
     st.divider()
     
-    # První ukázka živých dat z burzy
-    st.subheader("Aktuální ceny na burze")
+    st.subheader("📈 Trh s akciemi")
     
-    with st.spinner("Stahuji živá data z Wall Street..."):
+    with st.spinner("Stahuji živá data z Wall Street a aktuální kurzy měn..."):
         try:
-            # Stáhneme aktuální cenu Apple
-            apple = yf.Ticker("AAPL")
-            cena_usd = apple.history(period="1d")['Close'].iloc[-1]
-            # Zjednodušený převod na CZK (např. kurz 23 Kč za dolar)
-            cena_czk = int(cena_usd * 23)
+            # 1. Stažení živého kurzu USD/CZK
+            kurz_ticker = yf.Ticker("CZK=X")
+            kurz_usd_czk = kurz_ticker.history(period="1d")['Close'].iloc[-1]
+            st.caption(f"ℹ️ Aktuální kurz: 1 USD = {kurz_usd_czk:.2f} Kč")
             
-            st.info(f"🍏 **Apple (AAPL)**: Aktuální cena je **{cena_czk} Kč** za 1 akcii.")
+            # 2. Stažení dat pro Apple za poslední měsíc
+            apple = yf.Ticker("AAPL")
+            historie_usd = apple.history(period="1mo")['Close']
+            
+            # Přepočítáme celou historii z USD na CZK podle aktuálního kurzu
+            historie_czk = historie_usd * kurz_usd_czk
+            aktualni_cena = int(historie_czk.iloc[-1])
+            
+            st.info(f"🍏 **Apple (AAPL)**: Aktuální cena **{aktualni_cena} Kč** za kus")
+            
+            # 3. Zobrazení interaktivního grafu!
+            st.line_chart(historie_czk)
+            
+            # 4. Nákupní formulář
+            st.write("### 🛒 Nákup akcií Apple")
+            pocet_kusu = st.number_input("Kolik kusů chceš koupit?", min_value=1, value=1, step=1)
+            cena_celkem = pocet_kusu * aktualni_cena
+            
+            st.write(f"Celková cena nákupu: **{cena_celkem} Kč**")
+            
+            # Kontrola před nákupem
+            if st.button("Koupit AAPL"):
+                if st.session_state["zustatek"] >= cena_celkem:
+                    st.success(f"✅ Nákup schválen! Zde v dalším kroku naprogramujeme odečtení {cena_celkem} Kč z Google Tabulky.")
+                else:
+                    st.error("❌ Na tento nákup nemáš dostatek prostředků. Zkus koupit méně kusů.")
+                    
         except Exception as e:
-            st.warning("Cenu se nepodařilo načíst, zkus to za chvíli.")
-
-    st.write("*(Tady v dalším kroku přidáme tlačítka pro nákup a prodej!)*")
+            st.warning("Cenu nebo graf se nepodařilo načíst. Zkus obnovit stránku.")
