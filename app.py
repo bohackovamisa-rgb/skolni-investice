@@ -5,20 +5,23 @@ import json
 
 st.set_page_config(page_title="Investiční simulátor", layout="centered")
 
-# --- POMOCNÉ FUNKCE PRO ČESKÁ ČÍSLA ---
+# --- POMOCNÉ FUNKCE PRO ČÍSLA ---
 def cti_cislo(hodnota):
-    """Přečte číslo z tabulky, i když má mezery nebo české čárky."""
     if not hodnota:
         return 0.0
     return float(str(hodnota).replace(" ", "").replace(",", "."))
 
 def zapis_penize(hodnota):
-    """Připraví peníze pro zápis do české tabulky (2 desetinná místa, čárka)."""
     return f"{hodnota:.2f}".replace(".", ",")
 
 def zapis_kusy(hodnota):
-    """Připraví kusy pro zápis (4 desetinná místa pro krypto, čárka)."""
     return f"{hodnota:.4f}".replace(".", ",")
+
+def hezke_kusy(hodnota):
+    """Zobrazí číslo bez zbytečných nul na konci (např. 1.0000 -> 1)"""
+    if hodnota.is_integer():
+        return f"{int(hodnota)}"
+    return f"{hodnota}"
 
 # --- PAMĚŤ APLIKACE ---
 if "prihlasen" not in st.session_state:
@@ -156,7 +159,7 @@ else:
                 
                 with col_prodej:
                     st.write("### 💰 Prodat")
-                    st.write(f"Vlastníš: **{stav_aktiva_ted:.4f} ks**")
+                    st.write(f"Vlastníš: **{hezke_kusy(stav_aktiva_ted)} ks**")
                     pocet_prodat = st.number_input("Kusů k prodeji", min_value=0.0, max_value=float(stav_aktiva_ted) if stav_aktiva_ted > 0 else 0.0, step=1.0, value=0.0, key="prodej")
                     cena_prodat = round(pocet_prodat * aktualni_cena, 2)
                     st.write(f"Získáš: **{cena_prodat:.2f} Kč**")
@@ -212,9 +215,9 @@ else:
                             hodnota_polozky = round(mnozstvi * cena_aktiva, 2)
                             hodnota_aktiv_celkem += hodnota_polozky
                             
-                            st.write(f"🔸 **{nazev}**: {mnozstvi:.4f} ks *(hodnota cca {hodnota_polozky:.2f} Kč)*")
+                            st.write(f"🔸 **{nazev}**: {hezke_kusy(mnozstvi)} ks *(hodnota cca {hodnota_polozky:.2f} Kč)*")
                         except:
-                            st.write(f"🔸 **{nazev}**: {mnozstvi:.4f} ks *(cenu nelze právě teď načíst)*")
+                            st.write(f"🔸 **{nazev}**: {hezke_kusy(mnozstvi)} ks *(cenu nelze právě teď načíst)*")
                 
                 if not ma_neco:
                     st.info("Zatím nic nevlastníš. Běž na burzu a udělej svůj první obchod!")
