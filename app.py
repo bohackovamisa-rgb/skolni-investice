@@ -5,22 +5,16 @@ import json
 
 st.set_page_config(page_title="Investiční simulátor", layout="centered")
 
-# --- POMOCNÉ FUNKCE PRO ČÍSLA ---
-def cti_cislo(hodnota):
-    if not hodnota:
+# --- POMOCNÉ FUNKCE ---
+def bezpecny_float(hodnota):
+    """Převede cokoliv bezpečně na desetinné číslo."""
+    try:
+        return float(hodnota)
+    except (ValueError, TypeError):
         return 0.0
-    # Aplikace přečte cokoliv (čárku i tečku) a udělá z toho správné číslo
-    return float(str(hodnota).replace(" ", "").replace(",", "."))
-
-def zapis_penize(hodnota):
-    # Posíláme do Googlu čisté zaokrouhlené číslo (žádný text)
-    return float(round(hodnota, 2))
-
-def zapis_kusy(hodnota):
-    # Posíláme do Googlu čisté zaokrouhlené číslo
-    return float(round(hodnota, 4))
 
 def hezke_kusy(hodnota):
+    """Zobrazí číslo bez zbytečných nul (1.0 -> 1)"""
     if float(hodnota).is_integer():
         return f"{int(hodnota)}"
     return f"{hodnota}"
@@ -68,14 +62,15 @@ if not st.session_state["prihlasen"]:
         login_jmeno = st.text_input("Jméno (přesně jako v tabulce):")
         login_pin = st.text_input("PIN:", type="password")
         if st.button("Přihlásit se"):
-            zaznamy = db.get_all_records()
+            # UNFORMATTED_VALUE ignoruje české formátování a stahuje rovnou surová čísla!
+            zaznamy = db.get_all_records(value_render_option="UNFORMATTED_VALUE")
             nalezen = False
             for radek in zaznamy:
-                if str(radek["Jmeno"]) == login_jmeno and str(radek["PIN"]) == login_pin:
+                if str(radek.get("Jmeno", "")) == login_jmeno and str(radek.get("PIN", "")) == login_pin:
                     nalezen = True
                     st.session_state["prihlasen"] = True
                     st.session_state["jmeno"] = login_jmeno
-                    st.session_state["zustatek"] = cti_cislo(radek["Zustatek"])
+                    st.session_state["zustatek"] = bezpecny_float(radek.get("Zustatek", 0))
                     st.rerun()
             if not nalezen:
                 st.error("Chybné jméno nebo PIN.")
@@ -84,12 +79,11 @@ if not st.session_state["prihlasen"]:
         reg_jmeno = st.text_input("Tvé jméno:")
         reg_pin = st.text_input("Vymysli si PIN:", type="password")
         if st.button("Zaregistrovat"):
-            zaznamy = db.get_all_records()
-            if reg_jmeno in [str(r["Jmeno"]) for r in zaznamy]:
+            zaznamy = db.get_all_records(value_render_option="UNFORMATTED_VALUE")
+            if reg_jmeno in [str(r.get("Jmeno", "")) for r in zaznamy]:
                 st.error("Toto jméno už existuje.")
             else:
-                # Nyní se při registraci posílá čisté číslo 10000.0
-                db.append_row([reg_jmeno, reg_pin, 10000.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+                db.append_row([reg_jmeno, reg_pin, 10000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
                 st.success("Účet vytvořen! Nyní se můžeš přihlásit.")
 
 # ==========================================
@@ -106,6 +100,10 @@ else:
 
     st.divider()
     tab_burza, tab_portfolio = st.tabs(["📈 Burza (Nákup/Prodej)", "💼 Moje Portfolio"])
+    
+    # --- Stáhneme všechna data v surovém číselném formátu rovnou na začátku ---
+    vsechna_data = db.get_all_records(value_render_option="UNFORMATTED_VALUE")
+    moje_data = next((r for r in vsechna_data if str(r.get("Jmeno", "")) == st.session_state["jmeno"]), None)
     
     # ---------------- ZÁLOŽKA: BURZA ----------------
     with tab_burza:
@@ -137,13 +135,8 @@ else:
                     krok_formulare = 1.0
                     format_cisla = "%.2f"
                 
-                jmena_sloupec = db.col_values(1)
-                cislo_radku = jmena_sloupec.index(st.session_state["jmeno"]) + 1
-                hlavicky = db.row_values(1)
-                cislo_sloupce_aktiva = hlavicky.index(sloupec_db) + 1
-                
-                stav_aktiva_str = db.cell(cislo_radku, cislo_sloupce_aktiva).value
-                stav_aktiva_ted = cti_cislo(stav_aktiva_str)
+                # Zjištění vlastnictví přes surová data (vyhnutí se stringovým chybám)
+                stav_aktiva_ted = bezpecny_float(moje_data.get(sloupec_db, 0)) if moje_data else 0.0
 
                 col_nakup, col_prodej = st.columns(2)
                 
@@ -157,11 +150,18 @@ else:
                         if pocet_koupit > 0:
                             if st.session_state["zustatek"] >= cena_koupit:
                                 with st.spinner("Zapisuji do databáze..."):
-                                    novy_zustatek = st.session_state["zustatek"] - cena_koupit
-                                    novy_stav_aktiva = stav_aktiva_ted + pocet_koupit
+                                    novy_zustatek = round(st.session_state["zustatek"] - cena_koupit, 2)
+                                    novy_stav_aktiva = round(stav_aktiva_ted + pocet_koupit, 4)
                                     
-                                    db.update_cell(cislo_radku, 3, zapis_penize(novy_zustatek)) 
-                                    db.update_cell(cislo_radku, cislo_sloupce_aktiva, zapis_kusy(novy_stav_aktiva))
+                                    # Najdeme souřadnice pro zápis
+                                    jmena_sloupec = db.col_values(1)
+                                    cislo_radku = jmena_sloupec.index(st.session_state["jmeno"]) + 1
+                                    hlavicky = db.row_values(1)
+                                    cislo_sloupce_aktiva = hlavicky.index(sloupec_db) + 1
+                                    
+                                    # Posíláme do Googlu nativní čísla (žádný text)
+                                    db.update_cell(cislo_radku, 3, novy_zustatek) 
+                                    db.update_cell(cislo_radku, cislo_sloupce_aktiva, novy_stav_aktiva)
                                     
                                     st.session_state["zustatek"] = novy_zustatek
                                     st.success("✅ Nákup proběhl úspěšně!")
@@ -179,11 +179,16 @@ else:
                     if st.button("Potvrdit prodej"):
                         if pocet_prodat > 0 and pocet_prodat <= stav_aktiva_ted:
                             with st.spinner("Zapisuji do databáze..."):
-                                novy_zustatek = st.session_state["zustatek"] + cena_prodat
-                                novy_stav_aktiva = stav_aktiva_ted - pocet_prodat
+                                novy_zustatek = round(st.session_state["zustatek"] + cena_prodat, 2)
+                                novy_stav_aktiva = round(stav_aktiva_ted - pocet_prodat, 4)
                                 
-                                db.update_cell(cislo_radku, 3, zapis_penize(novy_zustatek))
-                                db.update_cell(cislo_radku, cislo_sloupce_aktiva, zapis_kusy(novy_stav_aktiva))
+                                jmena_sloupec = db.col_values(1)
+                                cislo_radku = jmena_sloupec.index(st.session_state["jmeno"]) + 1
+                                hlavicky = db.row_values(1)
+                                cislo_sloupce_aktiva = hlavicky.index(sloupec_db) + 1
+                                
+                                db.update_cell(cislo_radku, 3, novy_zustatek)
+                                db.update_cell(cislo_radku, cislo_sloupce_aktiva, novy_stav_aktiva)
                                 
                                 st.session_state["zustatek"] = novy_zustatek
                                 st.success("✅ Prodej proběhl úspěšně!")
@@ -196,13 +201,6 @@ else:
     with tab_portfolio:
         st.subheader("💼 Tvůj majetek")
         
-        vsechna_data = db.get_all_records()
-        moje_data = None
-        for r in vsechna_data:
-            if str(r["Jmeno"]) == st.session_state["jmeno"]:
-                moje_data = r
-                break
-                
         if moje_data:
             with st.spinner("Oceňuji tvůj majetek podle aktuálních kurzů..."):
                 try:
@@ -216,7 +214,7 @@ else:
                 st.write("**Aktuálně držíš tyto cenné papíry a krypto:**")
                 
                 for nazev, (ticker_symbol, mena, db_sloupec) in AKTIVA.items():
-                    mnozstvi = cti_cislo(moje_data.get(db_sloupec, 0))
+                    mnozstvi = bezpecny_float(moje_data.get(db_sloupec, 0))
                     if mnozstvi > 0:
                         ma_neco = True
                         try:
