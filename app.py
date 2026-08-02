@@ -7,14 +7,12 @@ st.set_page_config(page_title="Investiční simulátor", layout="centered")
 
 # --- POMOCNÉ FUNKCE ---
 def bezpecny_float(hodnota):
-    """Převede cokoliv bezpečně na desetinné číslo."""
     try:
         return float(hodnota)
     except (ValueError, TypeError):
         return 0.0
 
 def hezke_kusy(hodnota):
-    """Zobrazí číslo bez zbytečných nul (1.0 -> 1)"""
     if float(hodnota).is_integer():
         return f"{int(hodnota)}"
     return f"{hodnota}"
@@ -62,7 +60,6 @@ if not st.session_state["prihlasen"]:
         login_jmeno = st.text_input("Jméno (přesně jako v tabulce):")
         login_pin = st.text_input("PIN:", type="password")
         if st.button("Přihlásit se"):
-            # UNFORMATTED_VALUE ignoruje české formátování a stahuje rovnou surová čísla!
             zaznamy = db.get_all_records(value_render_option="UNFORMATTED_VALUE")
             nalezen = False
             for radek in zaznamy:
@@ -83,8 +80,9 @@ if not st.session_state["prihlasen"]:
             if reg_jmeno in [str(r.get("Jmeno", "")) for r in zaznamy]:
                 st.error("Toto jméno už existuje.")
             else:
-                db.append_row([reg_jmeno, reg_pin, 10000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-                st.success("Účet vytvořen! Nyní se můžeš přihlásit.")
+                # Noví žáci dostanou do startu 20 000 Kč
+                db.append_row([reg_jmeno, reg_pin, 20000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+                st.success("Účet vytvořen s částkou 20 000 Kč! Nyní se můžeš přihlásit.")
 
 # ==========================================
 # --- B: OBRAZOVKA PRO PŘIHLÁŠENÉ (BURZA) ---
@@ -101,7 +99,6 @@ else:
     st.divider()
     tab_burza, tab_portfolio = st.tabs(["📈 Burza (Nákup/Prodej)", "💼 Moje Portfolio"])
     
-    # --- Stáhneme všechna data v surovém číselném formátu rovnou na začátku ---
     vsechna_data = db.get_all_records(value_render_option="UNFORMATTED_VALUE")
     moje_data = next((r for r in vsechna_data if str(r.get("Jmeno", "")) == st.session_state["jmeno"]), None)
     
@@ -135,7 +132,6 @@ else:
                     krok_formulare = 1.0
                     format_cisla = "%.2f"
                 
-                # Zjištění vlastnictví přes surová data (vyhnutí se stringovým chybám)
                 stav_aktiva_ted = bezpecny_float(moje_data.get(sloupec_db, 0)) if moje_data else 0.0
 
                 col_nakup, col_prodej = st.columns(2)
@@ -153,13 +149,11 @@ else:
                                     novy_zustatek = round(st.session_state["zustatek"] - cena_koupit, 2)
                                     novy_stav_aktiva = round(stav_aktiva_ted + pocet_koupit, 4)
                                     
-                                    # Najdeme souřadnice pro zápis
                                     jmena_sloupec = db.col_values(1)
                                     cislo_radku = jmena_sloupec.index(st.session_state["jmeno"]) + 1
                                     hlavicky = db.row_values(1)
                                     cislo_sloupce_aktiva = hlavicky.index(sloupec_db) + 1
                                     
-                                    # Posíláme do Googlu nativní čísla (žádný text)
                                     db.update_cell(cislo_radku, 3, novy_zustatek) 
                                     db.update_cell(cislo_radku, cislo_sloupce_aktiva, novy_stav_aktiva)
                                     
@@ -235,7 +229,8 @@ else:
                 st.divider()
                 
                 celkovy_majetek = round(st.session_state["zustatek"] + hodnota_aktiv_celkem, 2)
-                zisk_ztrata = round(celkovy_majetek - 10000.0, 2)
+                # Zisk/Ztráta se po úpravě počítá oproti 20 000 Kč
+                zisk_ztrata = round(celkovy_majetek - 20000.0, 2)
                 
                 st.metric(
                     label="🏆 CELKOVÁ HODNOTA MAJETKU", 
