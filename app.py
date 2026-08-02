@@ -20,7 +20,7 @@ def hezke_kusy(hodnota):
     return f"{hodnota}"
 
 def barva_zisku_ztraty(val):
-    """Pomocná funkce pro barevné odlišení zisku (zelená) a ztráty (červená) v tabulce."""
+    """Pomocná funkcia pre farebné odlíšenie zisku (zelená) a straty (červená)."""
     try:
         val = float(val)
         if val > 0:
@@ -219,8 +219,8 @@ elif st.session_state["role"] == "UCITEL":
                         df_zebricek = df_zebricek.sort_values(by="Celkový majetek (Kč)", ascending=False).reset_index(drop=True)
                         df_zebricek.index += 1
                         
-                        # --- BAREVNÉ ZVÝRAZNĚNÍ TABULKY UČITELE ---
-                        df_styled = df_zebricek.style.applymap(barva_zisku_ztraty, subset=["Zisk / Ztráta (Kč)"]).format({
+                        # Změna: .map() místo staršího .applymap()
+                        df_styled = df_zebricek.style.map(barva_zisku_ztraty, subset=["Zisk / Ztráta (Kč)"]).format({
                             "Celkový majetek (Kč)": "{:.2f}",
                             "Zisk / Ztráta (Kč)": "{:+.2f}",
                             "Volná hotovost (Kč)": "{:.2f}"
@@ -491,8 +491,8 @@ else:
                     df_zebricek = df_zebricek.sort_values(by="Celkový majetek (Kč)", ascending=False).reset_index(drop=True)
                     df_zebricek.index += 1
                     
-                    # --- BAREVNÉ ZVÝRAZNĚNÍ TABULKY ŽÁKŮ ---
-                    df_styled = df_zebricek.style.applymap(barva_zisku_ztraty, subset=["Zisk / Ztráta (Kč)"]).format({
+                    # Změna: .map() místo staršího .applymap()
+                    df_styled = df_zebricek.style.map(barva_zisku_ztraty, subset=["Zisk / Ztráta (Kč)"]).format({
                         "Celkový majetek (Kč)": "{:.2f}",
                         "Zisk / Ztráta (Kč)": "{:+.2f}"
                     })
