@@ -100,12 +100,16 @@ if not st.session_state["prihlasen"]:
         reg_pin = st.text_input("Vymysli si osobní PIN:", type="password")
         
         if st.button("Zaregistrovat se"):
-            # Načtení učitelského hesla ze Secrets (výchozí záloha pokud v Secrets chybí)
-            spravne_ucitelske_heslo = st.secrets.get("ucitelske_heslo", "Ucitel123")
+            # Očistíme zadané heslo od uvozovek a mezer pro případ překlepu
+            zadane_heslo_ciste = tajny_kod_input.strip().strip('"').strip("'")
+            
+            # Povolíme hesla: Ucitel2026, Ucitel123 nebo cokoliv nastaveného v Secrets
+            heslo_ze_secrets = str(st.secrets.get("ucitelske_heslo", "Ucitel2026")).strip().strip('"').strip("'")
+            povolena_hesla = [heslo_ze_secrets, "Ucitel2026", "Ucitel123"]
             
             if not reg_jmeno or not reg_pin or (not je_ucitel and not reg_trida):
                 st.warning("⚠️ Vyplň prosím všechny potřebné údaje.")
-            elif je_ucitel and tajny_kod_input != spravne_ucitelske_heslo:
+            elif je_ucitel and zadane_heslo_ciste not in povolena_hesla:
                 st.error("❌ Nesprávné učitelské heslo! Registrace jako učitel byla zamítnuta.")
             else:
                 zaznamy = db_uzivatele.get_all_records(value_render_option="UNFORMATTED_VALUE")
@@ -114,7 +118,7 @@ if not st.session_state["prihlasen"]:
                 else:
                     role_str = "UCITEL" if je_ucitel else "ZAK"
                     db_uzivatele.append_row([role_str, reg_jmeno, reg_trida, reg_pin, 20000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-                    st.success("Účet úspěšně vytvořen! Nyní se můžeš přihlásit.")
+                    st.success("Účet úspěšně vytvořen! Nyní se můžeš přihlásit na záložce Přihlášení.")
 
 # ==========================================
 # --- B: OBRAZOVKA PRO UČITELE ---
