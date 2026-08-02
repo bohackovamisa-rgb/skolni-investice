@@ -125,6 +125,16 @@ else:
                 st.info(f"📊 **{vybrane_aktivum}**: Aktuální cena **{aktualni_cena:.2f} Kč**")
                 st.line_chart(historie_czk)
                 
+                # --- EDUKAČNÍ VLOŽKA PRO KRYPTOMĚNY ---
+                je_krypto = vybrane_aktivum in ["Bitcoin", "Ethereum"]
+                if je_krypto:
+                    st.warning("💡 **Tip do výuky:** Kryptoměny jsou velmi drahé. Nemusíš ale kupovat celý kus! V políčku níže si můžeš koupit jen malou část (např. zadáním `0.05` nebo `0.01`).")
+                    krok_formulare = 0.01
+                    format_cisla = "%.4f"
+                else:
+                    krok_formulare = 1.0
+                    format_cisla = "%.2f"
+                
                 jmena_sloupec = db.col_values(1)
                 cislo_radku = jmena_sloupec.index(st.session_state["jmeno"]) + 1
                 hlavicky = db.row_values(1)
@@ -137,7 +147,7 @@ else:
                 
                 with col_nakup:
                     st.write("### 🛒 Koupit")
-                    pocet_koupit = st.number_input("Kusů ke koupi", min_value=0.0, step=1.0, value=0.0, key="nakup")
+                    pocet_koupit = st.number_input("Kusů ke koupi", min_value=0.0, step=krok_formulare, format=format_cisla, value=0.0, key="nakup")
                     cena_koupit = round(pocet_koupit * aktualni_cena, 2)
                     st.write(f"Celková cena: **{cena_koupit:.2f} Kč**")
                     
@@ -160,7 +170,7 @@ else:
                 with col_prodej:
                     st.write("### 💰 Prodat")
                     st.write(f"Vlastníš: **{hezke_kusy(stav_aktiva_ted)} ks**")
-                    pocet_prodat = st.number_input("Kusů k prodeji", min_value=0.0, max_value=float(stav_aktiva_ted) if stav_aktiva_ted > 0 else 0.0, step=1.0, value=0.0, key="prodej")
+                    pocet_prodat = st.number_input("Kusů k prodeji", min_value=0.0, max_value=float(stav_aktiva_ted) if stav_aktiva_ted > 0 else 0.0, step=krok_formulare, format=format_cisla, value=0.0, key="prodej")
                     cena_prodat = round(pocet_prodat * aktualni_cena, 2)
                     st.write(f"Získáš: **{cena_prodat:.2f} Kč**")
                     
