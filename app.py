@@ -5,11 +5,26 @@ import json
 
 st.set_page_config(page_title="Investiční simulátor", layout="centered")
 
+# --- POMOCNÉ FUNKCE PRO ČESKÁ ČÍSLA ---
+def cti_cislo(hodnota):
+    """Přečte číslo z tabulky, i když má mezery nebo české čárky."""
+    if not hodnota:
+        return 0.0
+    return float(str(hodnota).replace(" ", "").replace(",", "."))
+
+def zapis_penize(hodnota):
+    """Připraví peníze pro zápis do české tabulky (2 desetinná místa, čárka)."""
+    return f"{hodnota:.2f}".replace(".", ",")
+
+def zapis_kusy(hodnota):
+    """Připraví kusy pro zápis (4 desetinná místa pro krypto, čárka)."""
+    return f"{hodnota:.4f}".replace(".", ",")
+
 # --- PAMĚŤ APLIKACE ---
 if "prihlasen" not in st.session_state:
     st.session_state["prihlasen"] = False
     st.session_state["jmeno"] = ""
-    st.session_state["zustatek"] = 0
+    st.session_state["zustatek"] = 0.0
 
 # --- PŘIPOJENÍ K DATABÁZI ---
 @st.cache_resource
@@ -24,7 +39,6 @@ except Exception as e:
     st.error(f"❌ Chyba při připojování databáze: {e}")
     st.stop()
 
-# Slovník: NÁZEV -> (TICKER, MĚNA, NÁZEV SLOUPCE)
 AKTIVA = {
     "Apple": ("AAPL", "USD", "AAPL"),
     "Tesla": ("TSLA", "USD", "TSLA"),
@@ -56,7 +70,7 @@ if not st.session_state["prihlasen"]:
                     nalezen = True
                     st.session_state["prihlasen"] = True
                     st.session_state["jmeno"] = login_jmeno
-                    st.session_state["zustatek"] = float(str(radek["Zustatek"]).replace(",", "."))
+                    st.session_state["zustatek"] = round(cti_cislo(radek["Zustatek"]), 2)
                     st.rerun()
             if not nalezen:
                 st.error("Chybné jméno nebo PIN.")
@@ -69,7 +83,7 @@ if not st.session_state["prihlasen"]:
             if reg_jmeno in [str(r["Jmeno"]) for r in zaznamy]:
                 st.error("Toto jméno už existuje.")
             else:
-                db.append_row([reg_jmeno, reg_pin, 10000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+                db.append_row([reg_jmeno, reg_pin, "10000,00", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0"])
                 st.success("Účet vytvořen! Nyní se můžeš přihlásit.")
 
 # ==========================================
@@ -85,7 +99,6 @@ else:
             st.rerun()
 
     st.divider()
-    
     tab_burza, tab_portfolio = st.tabs(["📈 Burza (Nákup/Prodej)", "💼 Moje Portfolio"])
     
     # ---------------- ZÁLOŽKA: BURZA ----------------
@@ -97,7 +110,6 @@ else:
         
         with st.spinner(f"Stahuji živá data pro {vybrane_aktivum}..."):
             try:
-                # 1. Kurz a data
                 if mena == "USD":
                     kurz_usd_czk = yf.Ticker("CZK=X").history(period="1d")['Close'].iloc[-1]
                 else:
@@ -105,35 +117,37 @@ else:
                 
                 historie = yf.Ticker(ticker_symbol).history(period="1mo")['Close']
                 historie_czk = historie * kurz_usd_czk
-                aktualni_cena = float(historie_czk.iloc[-1])
+                aktualni_cena = round(float(historie_czk.iloc[-1]), 2)
                 
                 st.info(f"📊 **{vybrane_aktivum}**: Aktuální cena **{aktualni_cena:.2f} Kč**")
                 st.line_chart(historie_czk)
                 
-                # Zjištění vlastnictví
                 jmena_sloupec = db.col_values(1)
                 cislo_radku = jmena_sloupec.index(st.session_state["jmeno"]) + 1
                 hlavicky = db.row_values(1)
                 cislo_sloupce_aktiva = hlavicky.index(sloupec_db) + 1
                 
                 stav_aktiva_str = db.cell(cislo_radku, cislo_sloupce_aktiva).value
-                stav_aktiva_ted = float(stav_aktiva_str.replace(",", ".")) if stav_aktiva_str else 0.0
+                stav_aktiva_ted = cti_cislo(stav_aktiva_str)
 
                 col_nakup, col_prodej = st.columns(2)
                 
                 with col_nakup:
                     st.write("### 🛒 Koupit")
                     pocet_koupit = st.number_input("Kusů ke koupi", min_value=0.0, step=1.0, value=0.0, key="nakup")
-                    cena_koupit = pocet_koupit * aktualni_cena
+                    cena_koupit = round(pocet_koupit * aktualni_cena, 2)
                     st.write(f"Celková cena: **{cena_koupit:.2f} Kč**")
                     
                     if st.button("Potvrdit nákup"):
                         if pocet_koupit > 0:
                             if st.session_state["zustatek"] >= cena_koupit:
                                 with st.spinner("Zapisuji do databáze..."):
-                                    novy_zustatek = st.session_state["zustatek"] - cena_koupit
-                                    db.update_cell(cislo_radku, 3, novy_zustatek) 
-                                    db.update_cell(cislo_radku, cislo_sloupce_aktiva, stav_aktiva_ted + pocet_koupit)
+                                    novy_zustatek = round(st.session_state["zustatek"] - cena_koupit, 2)
+                                    novy_stav_aktiva = round(stav_aktiva_ted + pocet_koupit, 4)
+                                    
+                                    db.update_cell(cislo_radku, 3, zapis_penize(novy_zustatek)) 
+                                    db.update_cell(cislo_radku, cislo_sloupce_aktiva, zapis_kusy(novy_stav_aktiva))
+                                    
                                     st.session_state["zustatek"] = novy_zustatek
                                     st.success("✅ Nákup proběhl úspěšně!")
                                     st.rerun()
@@ -142,17 +156,20 @@ else:
                 
                 with col_prodej:
                     st.write("### 💰 Prodat")
-                    st.write(f"Vlastníš: **{stav_aktiva_ted} ks**")
+                    st.write(f"Vlastníš: **{stav_aktiva_ted:.4f} ks**")
                     pocet_prodat = st.number_input("Kusů k prodeji", min_value=0.0, max_value=float(stav_aktiva_ted) if stav_aktiva_ted > 0 else 0.0, step=1.0, value=0.0, key="prodej")
-                    cena_prodat = pocet_prodat * aktualni_cena
+                    cena_prodat = round(pocet_prodat * aktualni_cena, 2)
                     st.write(f"Získáš: **{cena_prodat:.2f} Kč**")
                     
                     if st.button("Potvrdit prodej"):
                         if pocet_prodat > 0 and pocet_prodat <= stav_aktiva_ted:
                             with st.spinner("Zapisuji do databáze..."):
-                                novy_zustatek = st.session_state["zustatek"] + cena_prodat
-                                db.update_cell(cislo_radku, 3, novy_zustatek)
-                                db.update_cell(cislo_radku, cislo_sloupce_aktiva, stav_aktiva_ted - pocet_prodat)
+                                novy_zustatek = round(st.session_state["zustatek"] + cena_prodat, 2)
+                                novy_stav_aktiva = round(stav_aktiva_ted - pocet_prodat, 4)
+                                
+                                db.update_cell(cislo_radku, 3, zapis_penize(novy_zustatek))
+                                db.update_cell(cislo_radku, cislo_sloupce_aktiva, zapis_kusy(novy_stav_aktiva))
+                                
                                 st.session_state["zustatek"] = novy_zustatek
                                 st.success("✅ Prodej proběhl úspěšně!")
                                 st.rerun()
@@ -176,7 +193,7 @@ else:
                 try:
                     kurz_usd_czk = yf.Ticker("CZK=X").history(period="1d")['Close'].iloc[-1]
                 except:
-                    kurz_usd_czk = 23.0 # Záložní kurz při výpadku
+                    kurz_usd_czk = 23.0 
                 
                 hodnota_aktiv_celkem = 0.0
                 ma_neco = False
@@ -184,30 +201,28 @@ else:
                 st.write("**Aktuálně držíš tyto cenné papíry a krypto:**")
                 
                 for nazev, (ticker_symbol, mena, db_sloupec) in AKTIVA.items():
-                    mnozstvi = float(str(moje_data.get(db_sloupec, 0)).replace(",", "."))
+                    mnozstvi = cti_cislo(moje_data.get(db_sloupec, 0))
                     if mnozstvi > 0:
                         ma_neco = True
                         try:
-                            # Zjištění živé ceny pro výpočet
                             cena_aktiva = yf.Ticker(ticker_symbol).history(period="1d")['Close'].iloc[-1]
                             if mena == "USD":
                                 cena_aktiva *= kurz_usd_czk
                                 
-                            hodnota_polozky = mnozstvi * cena_aktiva
+                            hodnota_polozky = round(mnozstvi * cena_aktiva, 2)
                             hodnota_aktiv_celkem += hodnota_polozky
                             
-                            st.write(f"🔸 **{nazev}**: {mnozstvi} ks *(hodnota cca {hodnota_polozky:.2f} Kč)*")
+                            st.write(f"🔸 **{nazev}**: {mnozstvi:.4f} ks *(hodnota cca {hodnota_polozky:.2f} Kč)*")
                         except:
-                            st.write(f"🔸 **{nazev}**: {mnozstvi} ks *(cenu nelze právě teď načíst)*")
+                            st.write(f"🔸 **{nazev}**: {mnozstvi:.4f} ks *(cenu nelze právě teď načíst)*")
                 
                 if not ma_neco:
                     st.info("Zatím nic nevlastníš. Běž na burzu a udělej svůj první obchod!")
                 
                 st.divider()
                 
-                # Výpočet celkového majetku (Zůstatek v hotovosti + Hodnota všech nakoupených věcí)
-                celkovy_majetek = st.session_state["zustatek"] + hodnota_aktiv_celkem
-                zisk_ztrata = celkovy_majetek - 10000 # Počáteční vklad byl 10 000
+                celkovy_majetek = round(st.session_state["zustatek"] + hodnota_aktiv_celkem, 2)
+                zisk_ztrata = round(celkovy_majetek - 10000, 2)
                 
                 st.metric(
                     label="🏆 CELKOVÁ HODNOTA MAJETKU", 
