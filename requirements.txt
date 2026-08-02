@@ -1,3 +1,6 @@
 streamlit
 yfinance
 gspread
+google-auth
+pandas
+plotly
