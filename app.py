@@ -9,17 +9,19 @@ st.set_page_config(page_title="Investiční simulátor", layout="centered")
 def cti_cislo(hodnota):
     if not hodnota:
         return 0.0
+    # Aplikace přečte cokoliv (čárku i tečku) a udělá z toho správné číslo
     return float(str(hodnota).replace(" ", "").replace(",", "."))
 
 def zapis_penize(hodnota):
-    return f"{hodnota:.2f}".replace(".", ",")
+    # Posíláme do Googlu čisté zaokrouhlené číslo (žádný text)
+    return float(round(hodnota, 2))
 
 def zapis_kusy(hodnota):
-    return f"{hodnota:.4f}".replace(".", ",")
+    # Posíláme do Googlu čisté zaokrouhlené číslo
+    return float(round(hodnota, 4))
 
 def hezke_kusy(hodnota):
-    """Zobrazí číslo bez zbytečných nul na konci (např. 1.0000 -> 1)"""
-    if hodnota.is_integer():
+    if float(hodnota).is_integer():
         return f"{int(hodnota)}"
     return f"{hodnota}"
 
@@ -73,7 +75,7 @@ if not st.session_state["prihlasen"]:
                     nalezen = True
                     st.session_state["prihlasen"] = True
                     st.session_state["jmeno"] = login_jmeno
-                    st.session_state["zustatek"] = round(cti_cislo(radek["Zustatek"]), 2)
+                    st.session_state["zustatek"] = cti_cislo(radek["Zustatek"])
                     st.rerun()
             if not nalezen:
                 st.error("Chybné jméno nebo PIN.")
@@ -86,7 +88,8 @@ if not st.session_state["prihlasen"]:
             if reg_jmeno in [str(r["Jmeno"]) for r in zaznamy]:
                 st.error("Toto jméno už existuje.")
             else:
-                db.append_row([reg_jmeno, reg_pin, "10000,00", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0"])
+                # Nyní se při registraci posílá čisté číslo 10000.0
+                db.append_row([reg_jmeno, reg_pin, 10000.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
                 st.success("Účet vytvořen! Nyní se můžeš přihlásit.")
 
 # ==========================================
@@ -125,11 +128,10 @@ else:
                 st.info(f"📊 **{vybrane_aktivum}**: Aktuální cena **{aktualni_cena:.2f} Kč**")
                 st.line_chart(historie_czk)
                 
-                # --- EDUKAČNÍ VLOŽKA PRO KRYPTOMĚNY ---
                 je_krypto = vybrane_aktivum in ["Bitcoin", "Ethereum"]
                 if je_krypto:
-                    st.warning("💡 **Tip do výuky:** Kryptoměny jsou velmi drahé. Nemusíš ale kupovat celý kus! V políčku níže si můžeš koupit jen malou část (např. zadáním `0.05` nebo `0.01`).")
-                    krok_formulare = 0.01
+                    st.warning("💡 **Tip do výuky:** Kryptoměny jsou drahé. Nemusíš ale kupovat celý kus! V políčku níže zadej jen malou část (např. `0.05` nebo `0.002`).")
+                    krok_formulare = 0.001
                     format_cisla = "%.4f"
                 else:
                     krok_formulare = 1.0
@@ -155,8 +157,8 @@ else:
                         if pocet_koupit > 0:
                             if st.session_state["zustatek"] >= cena_koupit:
                                 with st.spinner("Zapisuji do databáze..."):
-                                    novy_zustatek = round(st.session_state["zustatek"] - cena_koupit, 2)
-                                    novy_stav_aktiva = round(stav_aktiva_ted + pocet_koupit, 4)
+                                    novy_zustatek = st.session_state["zustatek"] - cena_koupit
+                                    novy_stav_aktiva = stav_aktiva_ted + pocet_koupit
                                     
                                     db.update_cell(cislo_radku, 3, zapis_penize(novy_zustatek)) 
                                     db.update_cell(cislo_radku, cislo_sloupce_aktiva, zapis_kusy(novy_stav_aktiva))
@@ -177,8 +179,8 @@ else:
                     if st.button("Potvrdit prodej"):
                         if pocet_prodat > 0 and pocet_prodat <= stav_aktiva_ted:
                             with st.spinner("Zapisuji do databáze..."):
-                                novy_zustatek = round(st.session_state["zustatek"] + cena_prodat, 2)
-                                novy_stav_aktiva = round(stav_aktiva_ted - pocet_prodat, 4)
+                                novy_zustatek = st.session_state["zustatek"] + cena_prodat
+                                novy_stav_aktiva = stav_aktiva_ted - pocet_prodat
                                 
                                 db.update_cell(cislo_radku, 3, zapis_penize(novy_zustatek))
                                 db.update_cell(cislo_radku, cislo_sloupce_aktiva, zapis_kusy(novy_stav_aktiva))
@@ -235,7 +237,7 @@ else:
                 st.divider()
                 
                 celkovy_majetek = round(st.session_state["zustatek"] + hodnota_aktiv_celkem, 2)
-                zisk_ztrata = round(celkovy_majetek - 10000, 2)
+                zisk_ztrata = round(celkovy_majetek - 10000.0, 2)
                 
                 st.metric(
                     label="🏆 CELKOVÁ HODNOTA MAJETKU", 
