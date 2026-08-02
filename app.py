@@ -84,14 +84,14 @@ else:
             st.session_state["prihlasen"] = False
             st.rerun()
 
-    st.metric(label="Dostupné prostředky", value=f"{st.session_state['zustatek']:.2f} Kč")
     st.divider()
     
-    # NOVINKA: Záložky i pro přihlášeného uživatele
     tab_burza, tab_portfolio = st.tabs(["📈 Burza (Nákup/Prodej)", "💼 Moje Portfolio"])
     
     # ---------------- ZÁLOŽKA: BURZA ----------------
     with tab_burza:
+        st.metric(label="Dostupné peníze na účtu", value=f"{st.session_state['zustatek']:.2f} Kč")
+        
         vybrane_aktivum = st.selectbox("Vyber aktivum, které tě zajímá:", list(AKTIVA.keys()))
         ticker_symbol, mena, sloupec_db = AKTIVA[vybrane_aktivum]
         
@@ -110,7 +110,7 @@ else:
                 st.info(f"📊 **{vybrane_aktivum}**: Aktuální cena **{aktualni_cena:.2f} Kč**")
                 st.line_chart(historie_czk)
                 
-                # Zjištění, kolik toho žák teď má (načítáme vždy aktuálně z tabulky)
+                # Zjištění vlastnictví
                 jmena_sloupec = db.col_values(1)
                 cislo_radku = jmena_sloupec.index(st.session_state["jmeno"]) + 1
                 hlavicky = db.row_values(1)
@@ -119,7 +119,6 @@ else:
                 stav_aktiva_str = db.cell(cislo_radku, cislo_sloupce_aktiva).value
                 stav_aktiva_ted = float(stav_aktiva_str.replace(",", ".")) if stav_aktiva_str else 0.0
 
-                # Dva sloupce: Nákup vedle Prodeje
                 col_nakup, col_prodej = st.columns(2)
                 
                 with col_nakup:
@@ -133,7 +132,7 @@ else:
                             if st.session_state["zustatek"] >= cena_koupit:
                                 with st.spinner("Zapisuji do databáze..."):
                                     novy_zustatek = st.session_state["zustatek"] - cena_koupit
-                                    db.update_cell(cislo_radku, 3, novy_zustatek) # Sloupec 3 = Zůstatek
+                                    db.update_cell(cislo_radku, 3, novy_zustatek) 
                                     db.update_cell(cislo_radku, cislo_sloupce_aktiva, stav_aktiva_ted + pocet_koupit)
                                     st.session_state["zustatek"] = novy_zustatek
                                     st.success("✅ Nákup proběhl úspěšně!")
@@ -163,9 +162,8 @@ else:
 
     # ---------------- ZÁLOŽKA: PORTFOLIO ----------------
     with tab_portfolio:
-        st.subheader("V tvém sejfu se aktuálně nachází:")
+        st.subheader("💼 Tvůj majetek")
         
-        # Stáhneme celou tabulku a najdeme data přihlášeného uživatele
         vsechna_data = db.get_all_records()
         moje_data = None
         for r in vsechna_data:
@@ -174,13 +172,45 @@ else:
                 break
                 
         if moje_data:
-            ma_neco = False
-            for nazev, (_, _, db_sloupec) in AKTIVA.items():
-                # Získáme množství z tabulky a převedeme na číslo
-                mnozstvi = float(str(moje_data.get(db_sloupec, 0)).replace(",", "."))
-                if mnozstvi > 0:
-                    ma_neco = True
-                    st.write(f"🔸 **{nazev}**: {mnozstvi} ks")
-            
-            if not ma_neco:
-                st.info("Tvé portfolio je zatím prázdné. Běž na burzu a nakup své první akcie nebo krypto!")
+            with st.spinner("Oceňuji tvůj majetek podle aktuálních kurzů..."):
+                try:
+                    kurz_usd_czk = yf.Ticker("CZK=X").history(period="1d")['Close'].iloc[-1]
+                except:
+                    kurz_usd_czk = 23.0 # Záložní kurz při výpadku
+                
+                hodnota_aktiv_celkem = 0.0
+                ma_neco = False
+                
+                st.write("**Aktuálně držíš tyto cenné papíry a krypto:**")
+                
+                for nazev, (ticker_symbol, mena, db_sloupec) in AKTIVA.items():
+                    mnozstvi = float(str(moje_data.get(db_sloupec, 0)).replace(",", "."))
+                    if mnozstvi > 0:
+                        ma_neco = True
+                        try:
+                            # Zjištění živé ceny pro výpočet
+                            cena_aktiva = yf.Ticker(ticker_symbol).history(period="1d")['Close'].iloc[-1]
+                            if mena == "USD":
+                                cena_aktiva *= kurz_usd_czk
+                                
+                            hodnota_polozky = mnozstvi * cena_aktiva
+                            hodnota_aktiv_celkem += hodnota_polozky
+                            
+                            st.write(f"🔸 **{nazev}**: {mnozstvi} ks *(hodnota cca {hodnota_polozky:.2f} Kč)*")
+                        except:
+                            st.write(f"🔸 **{nazev}**: {mnozstvi} ks *(cenu nelze právě teď načíst)*")
+                
+                if not ma_neco:
+                    st.info("Zatím nic nevlastníš. Běž na burzu a udělej svůj první obchod!")
+                
+                st.divider()
+                
+                # Výpočet celkového majetku (Zůstatek v hotovosti + Hodnota všech nakoupených věcí)
+                celkovy_majetek = st.session_state["zustatek"] + hodnota_aktiv_celkem
+                zisk_ztrata = celkovy_majetek - 10000 # Počáteční vklad byl 10 000
+                
+                st.metric(
+                    label="🏆 CELKOVÁ HODNOTA MAJETKU", 
+                    value=f"{celkovy_majetek:.2f} Kč", 
+                    delta=f"{zisk_ztrata:.2f} Kč od začátku"
+                )
