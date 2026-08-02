@@ -4,6 +4,7 @@ import gspread
 import json
 import pandas as pd
 import plotly.express as px
+from datetime import datetime
 
 st.set_page_config(page_title="Investiční simulátor", layout="centered")
 
@@ -265,15 +266,23 @@ elif st.session_state["role"] == "UCITEL":
                     
                     if db_transakce:
                         try:
-                            vsechny_transakce = db_transakce.get_all_records()
-                            transakce_zaka = [t for t in vsechny_transakce if str(t.get("Jmeno", "")).strip().lower() == vybrany_nick.lower()]
+                            vsechny_transakce = db_transakce.get_all_records(value_render_option="UNFORMATTED_VALUE")
+                            transakce_zaka = []
+                            jmeno_zaka_full = str(data_zaka.get('Jmeno', '')).strip().lower()
+                            
+                            for t in vsechny_transakce:
+                                user_in_t = str(t.get("Nick", t.get("Jmeno", ""))).strip().lower()
+                                if user_in_t in [vybrany_nick.lower(), jmeno_zaka_full]:
+                                    transakce_zaka.append({
+                                        "Čas": str(t.get("Cas", "")),
+                                        "Typ obchodu": str(t.get("Typ", "")),
+                                        "Aktivum": str(t.get("Aktivum", "")),
+                                        "Kusů": hezke_kusy(bezpecny_float(t.get("Kusu", 0))),
+                                        "Celková cena (Kč)": f"{bezpecny_float(t.get('Cena_CZK', 0)):.2f} Kč"
+                                    })
                             
                             if transakce_zaka:
-                                df_t = pd.DataFrame(transakce_zaka)
-                                # Úprava sloupce pro přehlednější zobrazení
-                                sloupce_k_zobrazeni = [c for c in ["Typ", "Aktivum", "Kusu", "Cena_CZK"] if c in df_t.columns]
-                                df_t_clean = df_t[sloupce_k_zobrazeni]
-                                df_t_clean.columns = [c.replace("Kusu", "Kusů").replace("Cena_CZK", "Celková cena (Kč)").replace("Typ", "Typ obchodu") for c in df_t_clean.columns]
+                                df_t_clean = pd.DataFrame(transakce_zaka)
                                 st.dataframe(df_t_clean, use_container_width=True)
                             else:
                                 st.info("Tento žák zatím neprovedl žádné obchody.")
@@ -385,7 +394,8 @@ else:
                                     
                                     if db_transakce:
                                         try:
-                                            db_transakce.append_row([st.session_state["nick"], "NÁKUP", vybrane_aktivum, pocet_koupit, cena_koupit])
+                                            cas_ted = datetime.now().strftime("%d.%m.%Y %H:%M")
+                                            db_transakce.append_row([cas_ted, st.session_state["nick"], "NÁKUP", vybrane_aktivum, pocet_koupit, cena_koupit])
                                         except:
                                             pass
                                     
@@ -419,7 +429,8 @@ else:
                                 
                                 if db_transakce:
                                     try:
-                                        db_transakce.append_row([st.session_state["nick"], "PRODEJ", vybrane_aktivum, pocet_prodat, cena_prodat])
+                                        cas_ted = datetime.now().strftime("%d.%m.%Y %H:%M")
+                                        db_transakce.append_row([cas_ted, st.session_state["nick"], "PRODEJ", vybrane_aktivum, pocet_prodat, cena_prodat])
                                     except:
                                         pass
                                 
@@ -492,12 +503,23 @@ else:
                 st.subheader("📜 Tvoje historie obchodů")
                 if db_transakce:
                     try:
-                        vsechny_transakce = db_transakce.get_all_records()
-                        moje_transakce = [t for t in vsechny_transakce if str(t.get("Jmeno", "")).strip().lower() == st.session_state["nick"].lower()]
+                        vsechny_transakce = db_transakce.get_all_records(value_render_option="UNFORMATTED_VALUE")
+                        moje_transakce = []
+                        moje_jmeno_full = str(moje_data.get('Jmeno', '')).strip().lower()
+                        
+                        for t in vsechny_transakce:
+                            user_in_t = str(t.get("Nick", t.get("Jmeno", ""))).strip().lower()
+                            if user_in_t in [st.session_state["nick"].lower(), moje_jmeno_full]:
+                                moje_transakce.append({
+                                    "Čas": str(t.get("Cas", "")),
+                                    "Typ obchodu": str(t.get("Typ", "")),
+                                    "Aktivum": str(t.get("Aktivum", "")),
+                                    "Kusů": hezke_kusy(bezpecny_float(t.get("Kusu", 0))),
+                                    "Celková cena (Kč)": f"{bezpecny_float(t.get('Cena_CZK', 0)):.2f} Kč"
+                                })
                         
                         if moje_transakce:
-                            df_transakce = pd.DataFrame(moje_transakce)[["Typ", "Aktivum", "Kusu", "Cena_CZK"]]
-                            df_transakce.columns = ["Typ obchodu", "Aktivum", "Kusů", "Celková cena (Kč)"]
+                            df_transakce = pd.DataFrame(moje_transakce)
                             st.dataframe(df_transakce, use_container_width=True)
                         else:
                             st.caption("Zatím jsi neprovedl(a) žádné obchody.")
