@@ -4,9 +4,15 @@ import gspread
 import json
 
 st.set_page_config(page_title="Investiční simulátor", layout="centered")
-st.title("📈 Školní investiční simulátor")
 
-# 1. Funkce pro bezpečné připojení k databázi
+# --- 1. PAMĚŤ APLIKACE (SESSION STATE) ---
+# Toto zajistí, že si aplikace pamatuje, kdo je přihlášený
+if "prihlasen" not in st.session_state:
+    st.session_state["prihlasen"] = False
+    st.session_state["jmeno"] = ""
+    st.session_state["zustatek"] = 0
+
+# --- 2. PŘIPOJENÍ K DATABÁZI ---
 @st.cache_resource
 def pripojit_databazi():
     tajemstvi = json.loads(st.secrets["google_credentials"])
@@ -16,67 +22,81 @@ def pripojit_databazi():
 
 try:
     db = pripojit_databazi()
-    # Zelené hlášení o připojení už můžeme skrýt, ať to žáky neruší. 
-    # Necháme ho tu jen zakomentované, kdybys ho někdy potřebovala.
-    # st.success("✅ Databáze úspěšně připojena!")
 except Exception as e:
     st.error(f"❌ Chyba při připojování databáze: {e}")
     st.stop()
 
-st.divider()
+# ==========================================
+# --- A: OBRAZOVKA PRO NEPŘIHLÁŠENÉ ---
+# ==========================================
+if not st.session_state["prihlasen"]:
+    st.title("📈 Školní investiční simulátor")
+    tab1, tab2 = st.tabs(["🔐 Přihlášení", "📝 Nová registrace"])
 
-# Vytvoření dvou záložek
-tab1, tab2 = st.tabs(["🔐 Přihlášení", "📝 Nová registrace"])
+    with tab1:
+        st.subheader("Přihlášení")
+        login_jmeno = st.text_input("Jméno (přesně jako v tabulce):")
+        login_pin = st.text_input("PIN:", type="password")
 
-# --- ZÁLOŽKA 1: PŘIHLÁŠENÍ ---
-with tab1:
-    st.subheader("Přihlášení žáka")
-    login_jmeno = st.text_input("Zadej své jméno (přesně jako při registraci):", key="log_jmeno")
-    login_pin = st.text_input("Zadej PIN:", type="password", key="log_pin")
-
-    if st.button("Přihlásit se"):
-        if not login_jmeno or not login_pin:
-            st.warning("Prosím, vyplň jméno i PIN.")
-        else:
+        if st.button("Přihlásit se"):
             zaznamy = db.get_all_records()
-            uzivatel_nalezen = False
-            
+            nalezen = False
             for radek in zaznamy:
                 if str(radek["Jmeno"]) == login_jmeno and str(radek["PIN"]) == login_pin:
-                    uzivatel_nalezen = True
-                    st.success(f"Vítej, **{login_jmeno}**!")
-                    st.write(f"Tvůj aktuální zůstatek: **{radek['Zustatek']} Kč**")
-                    # (Tady později naprogramujeme samotné obchodování)
-                    break
-                    
-            if not uzivatel_nalezen:
-                st.error("Chybné jméno nebo PIN. Zkus to znovu.")
-
-# --- ZÁLOŽKA 2: REGISTRACE ---
-with tab2:
-    st.subheader("Vytvoření nového účtu")
-    reg_jmeno = st.text_input("Zadej jméno a příjmení (např. Jan Novák):")
-    reg_pin = st.text_input("Vymysli si PIN (doporučujeme 4 čísla):", type="password", key="reg_pin")
-    reg_pin_kontrola = st.text_input("Zadej PIN ještě jednou pro kontrolu:", type="password")
-
-    if st.button("Zaregistrovat se"):
-        if not reg_jmeno or not reg_pin:
-            st.warning("Musíš vyplnit všechny údaje.")
-        elif reg_pin != reg_pin_kontrola:
-            st.error("Zadané PINy se neshodují! Zkus to znovu.")
-        else:
-            # Stáhneme data, abychom zkontrolovali, jestli už jméno neexistuje
-            zaznamy = db.get_all_records()
-            jmena_v_db = [str(radek["Jmeno"]) for radek in zaznamy]
+                    nalezen = True
+                    # Uložíme údaje do paměti a obnovíme stránku
+                    st.session_state["prihlasen"] = True
+                    st.session_state["jmeno"] = login_jmeno
+                    st.session_state["zustatek"] = radek["Zustatek"]
+                    st.rerun() # Toto příkazem znovu načte aplikaci s přihlášeným uživatelem
             
-            if reg_jmeno in jmena_v_db:
-                st.error("Tohle jméno už v systému je. Zkus si za jméno přidat třeba začáteční písmeno příjmení.")
+            if not nalezen:
+                st.error("Chybné jméno nebo PIN.")
+
+    with tab2:
+        st.subheader("Nová registrace")
+        reg_jmeno = st.text_input("Tvé jméno:")
+        reg_pin = st.text_input("Vymysli si PIN:", type="password")
+        if st.button("Zaregistrovat"):
+            zaznamy = db.get_all_records()
+            jmena = [str(r["Jmeno"]) for r in zaznamy]
+            if reg_jmeno in jmena:
+                st.error("Toto jméno už existuje.")
             else:
-                # Připravíme si nový řádek do tabulky 
-                # (Pořadí: Jmeno, PIN, Zustatek, AAPL, TSLA, CEZ, BTC, MSFT)
-                novy_radek = [reg_jmeno, reg_pin, 10000, 0, 0, 0, 0, 0]
-                
-                # Zápis do Google Tabulky!
-                db.append_row(novy_radek)
-                st.balloons() # Pro radost přidáme balónky :-)
-                st.success(f"Účet pro **{reg_jmeno}** byl úspěšně vytvořen s rozpočtem 10 000 Kč! Překlikni nahoře na 'Přihlášení' a můžeš začít.")
+                db.append_row([reg_jmeno, reg_pin, 10000, 0, 0, 0, 0, 0])
+                st.success("Účet vytvořen! Nyní se můžeš přihlásit v záložce vedle.")
+
+# ==========================================
+# --- B: OBRAZOVKA PRO PŘIHLÁŠENÉ (BURZA) ---
+# ==========================================
+else:
+    # Hlavička s pozdravem a tlačítkem pro odhlášení
+    sloupec1, sloupec2 = st.columns([3, 1])
+    with sloupec1:
+        st.title(f"Vítej, {st.session_state['jmeno']}! 👋")
+    with sloupec2:
+        if st.button("Odhlásit se"):
+            st.session_state["prihlasen"] = False
+            st.rerun()
+
+    # Zobrazení aktuálního zůstatku
+    st.metric(label="Dostupné prostředky", value=f"{st.session_state['zustatek']} Kč")
+    
+    st.divider()
+    
+    # První ukázka živých dat z burzy
+    st.subheader("Aktuální ceny na burze")
+    
+    with st.spinner("Stahuji živá data z Wall Street..."):
+        try:
+            # Stáhneme aktuální cenu Apple
+            apple = yf.Ticker("AAPL")
+            cena_usd = apple.history(period="1d")['Close'].iloc[-1]
+            # Zjednodušený převod na CZK (např. kurz 23 Kč za dolar)
+            cena_czk = int(cena_usd * 23)
+            
+            st.info(f"🍏 **Apple (AAPL)**: Aktuální cena je **{cena_czk} Kč** za 1 akcii.")
+        except Exception as e:
+            st.warning("Cenu se nepodařilo načíst, zkus to za chvíli.")
+
+    st.write("*(Tady v dalším kroku přidáme tlačítka pro nákup a prodej!)*")
