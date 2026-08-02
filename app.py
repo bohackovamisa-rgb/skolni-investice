@@ -24,7 +24,7 @@ except Exception as e:
     st.error(f"❌ Chyba při připojování databáze: {e}")
     st.stop()
 
-# Slovník: NÁZEV -> (TICKER NA BURZE, MĚNA, NÁZEV SLOUPCE V TABULCE)
+# Slovník: NÁZEV -> (TICKER, MĚNA, NÁZEV SLOUPCE)
 AKTIVA = {
     "Apple": ("AAPL", "USD", "AAPL"),
     "Tesla": ("TSLA", "USD", "TSLA"),
@@ -56,7 +56,7 @@ if not st.session_state["prihlasen"]:
                     nalezen = True
                     st.session_state["prihlasen"] = True
                     st.session_state["jmeno"] = login_jmeno
-                    st.session_state["zustatek"] = float(radek["Zustatek"])
+                    st.session_state["zustatek"] = float(str(radek["Zustatek"]).replace(",", "."))
                     st.rerun()
             if not nalezen:
                 st.error("Chybné jméno nebo PIN.")
@@ -87,63 +87,100 @@ else:
     st.metric(label="Dostupné prostředky", value=f"{st.session_state['zustatek']:.2f} Kč")
     st.divider()
     
-    st.subheader("📈 Trh s aktivy")
+    # NOVINKA: Záložky i pro přihlášeného uživatele
+    tab_burza, tab_portfolio = st.tabs(["📈 Burza (Nákup/Prodej)", "💼 Moje Portfolio"])
     
-    vybrane_aktivum = st.selectbox("Vyber aktivum, které tě zajímá:", list(AKTIVA.keys()))
-    ticker_symbol, mena, sloupec_db = AKTIVA[vybrane_aktivum]
-    
-    with st.spinner(f"Stahuji živá data pro {vybrane_aktivum}..."):
-        try:
-            # 1. Zjištění kurzu
-            if mena == "USD":
-                kurz_usd_czk = yf.Ticker("CZK=X").history(period="1d")['Close'].iloc[-1]
-            else:
-                kurz_usd_czk = 1.0
-            
-            # 2. Stažení dat a přepočet
-            data_aktiva = yf.Ticker(ticker_symbol)
-            historie = data_aktiva.history(period="1mo")['Close']
-            historie_czk = historie * kurz_usd_czk
-            aktualni_cena = float(historie_czk.iloc[-1])
-            
-            st.info(f"📊 **{vybrane_aktivum}**: Aktuální cena **{aktualni_cena:.2f} Kč**")
-            st.line_chart(historie_czk)
-            
-            # 3. Formulář pro NÁKUP
-            st.write(f"### 🛒 Koupit {vybrane_aktivum}")
-            pocet = st.number_input(f"Kolik kusů chceš koupit?", min_value=1.0, step=1.0, value=1.0)
-            cena_celkem = pocet * aktualni_cena
-            st.write(f"Celková cena: **{cena_celkem:.2f} Kč**")
-            
-            if st.button(f"Potvrdit nákup ({pocet} ks)"):
-                if st.session_state["zustatek"] >= cena_celkem:
-                    with st.spinner("Zapisuji transakci do banky..."):
-                        # Najdeme řádek uživatele a sloupec aktiva
-                        jmena_sloupec = db.col_values(1)
-                        cislo_radku = jmena_sloupec.index(st.session_state["jmeno"]) + 1
-                        
-                        hlavicky = db.row_values(1)
-                        cislo_sloupce_aktiva = hlavicky.index(sloupec_db) + 1
-                        cislo_sloupce_zustatek = 3 # Zůstatek je vždy 3. sloupec
-                        
-                        # Přečteme, kolik toho má žák teď (pokud je buňka prázdná, dáme 0)
-                        stav_aktiva_str = db.cell(cislo_radku, cislo_sloupce_aktiva).value
-                        stav_aktiva_ted = float(stav_aktiva_str.replace(",", ".")) if stav_aktiva_str else 0.0
-                        
-                        # Spočítáme nové hodnoty
-                        novy_zustatek = st.session_state["zustatek"] - cena_celkem
-                        novy_stav_aktiva = stav_aktiva_ted + pocet
-                        
-                        # Zapíšeme do Googlu
-                        db.update_cell(cislo_radku, cislo_sloupce_zustatek, novy_zustatek)
-                        db.update_cell(cislo_radku, cislo_sloupce_aktiva, novy_stav_aktiva)
-                        
-                        # Aktualizujeme paměť a obnovíme
-                        st.session_state["zustatek"] = novy_zustatek
-                        st.success("✅ Nákup úspěšně proběhl!")
-                        st.rerun()
+    # ---------------- ZÁLOŽKA: BURZA ----------------
+    with tab_burza:
+        vybrane_aktivum = st.selectbox("Vyber aktivum, které tě zajímá:", list(AKTIVA.keys()))
+        ticker_symbol, mena, sloupec_db = AKTIVA[vybrane_aktivum]
+        
+        with st.spinner(f"Stahuji živá data pro {vybrane_aktivum}..."):
+            try:
+                # 1. Kurz a data
+                if mena == "USD":
+                    kurz_usd_czk = yf.Ticker("CZK=X").history(period="1d")['Close'].iloc[-1]
                 else:
-                    st.error("❌ Na tento nákup nemáš dostatek prostředků.")
+                    kurz_usd_czk = 1.0
+                
+                historie = yf.Ticker(ticker_symbol).history(period="1mo")['Close']
+                historie_czk = historie * kurz_usd_czk
+                aktualni_cena = float(historie_czk.iloc[-1])
+                
+                st.info(f"📊 **{vybrane_aktivum}**: Aktuální cena **{aktualni_cena:.2f} Kč**")
+                st.line_chart(historie_czk)
+                
+                # Zjištění, kolik toho žák teď má (načítáme vždy aktuálně z tabulky)
+                jmena_sloupec = db.col_values(1)
+                cislo_radku = jmena_sloupec.index(st.session_state["jmeno"]) + 1
+                hlavicky = db.row_values(1)
+                cislo_sloupce_aktiva = hlavicky.index(sloupec_db) + 1
+                
+                stav_aktiva_str = db.cell(cislo_radku, cislo_sloupce_aktiva).value
+                stav_aktiva_ted = float(stav_aktiva_str.replace(",", ".")) if stav_aktiva_str else 0.0
+
+                # Dva sloupce: Nákup vedle Prodeje
+                col_nakup, col_prodej = st.columns(2)
+                
+                with col_nakup:
+                    st.write("### 🛒 Koupit")
+                    pocet_koupit = st.number_input("Kusů ke koupi", min_value=0.0, step=1.0, value=0.0, key="nakup")
+                    cena_koupit = pocet_koupit * aktualni_cena
+                    st.write(f"Celková cena: **{cena_koupit:.2f} Kč**")
                     
-        except Exception as e:
-            st.warning(f"Chyba při stahování dat: {e}")
+                    if st.button("Potvrdit nákup"):
+                        if pocet_koupit > 0:
+                            if st.session_state["zustatek"] >= cena_koupit:
+                                with st.spinner("Zapisuji do databáze..."):
+                                    novy_zustatek = st.session_state["zustatek"] - cena_koupit
+                                    db.update_cell(cislo_radku, 3, novy_zustatek) # Sloupec 3 = Zůstatek
+                                    db.update_cell(cislo_radku, cislo_sloupce_aktiva, stav_aktiva_ted + pocet_koupit)
+                                    st.session_state["zustatek"] = novy_zustatek
+                                    st.success("✅ Nákup proběhl úspěšně!")
+                                    st.rerun()
+                            else:
+                                st.error("❌ Nemáš dostatek prostředků.")
+                
+                with col_prodej:
+                    st.write("### 💰 Prodat")
+                    st.write(f"Vlastníš: **{stav_aktiva_ted} ks**")
+                    pocet_prodat = st.number_input("Kusů k prodeji", min_value=0.0, max_value=float(stav_aktiva_ted) if stav_aktiva_ted > 0 else 0.0, step=1.0, value=0.0, key="prodej")
+                    cena_prodat = pocet_prodat * aktualni_cena
+                    st.write(f"Získáš: **{cena_prodat:.2f} Kč**")
+                    
+                    if st.button("Potvrdit prodej"):
+                        if pocet_prodat > 0 and pocet_prodat <= stav_aktiva_ted:
+                            with st.spinner("Zapisuji do databáze..."):
+                                novy_zustatek = st.session_state["zustatek"] + cena_prodat
+                                db.update_cell(cislo_radku, 3, novy_zustatek)
+                                db.update_cell(cislo_radku, cislo_sloupce_aktiva, stav_aktiva_ted - pocet_prodat)
+                                st.session_state["zustatek"] = novy_zustatek
+                                st.success("✅ Prodej proběhl úspěšně!")
+                                st.rerun()
+
+            except Exception as e:
+                st.warning(f"Chyba při stahování dat: {e}")
+
+    # ---------------- ZÁLOŽKA: PORTFOLIO ----------------
+    with tab_portfolio:
+        st.subheader("V tvém sejfu se aktuálně nachází:")
+        
+        # Stáhneme celou tabulku a najdeme data přihlášeného uživatele
+        vsechna_data = db.get_all_records()
+        moje_data = None
+        for r in vsechna_data:
+            if str(r["Jmeno"]) == st.session_state["jmeno"]:
+                moje_data = r
+                break
+                
+        if moje_data:
+            ma_neco = False
+            for nazev, (_, _, db_sloupec) in AKTIVA.items():
+                # Získáme množství z tabulky a převedeme na číslo
+                mnozstvi = float(str(moje_data.get(db_sloupec, 0)).replace(",", "."))
+                if mnozstvi > 0:
+                    ma_neco = True
+                    st.write(f"🔸 **{nazev}**: {mnozstvi} ks")
+            
+            if not ma_neco:
+                st.info("Tvé portfolio je zatím prázdné. Běž na burzu a nakup své první akcie nebo krypto!")
