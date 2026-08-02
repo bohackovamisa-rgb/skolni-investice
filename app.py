@@ -20,7 +20,7 @@ def hezke_kusy(hodnota):
     return f"{hodnota}"
 
 def barva_zisku_ztraty(val):
-    """Pomocná funkcia pre farebné odlíšenie zisku (zelená) a straty (červená)."""
+    """Pomocná funkce pro barevné odlišení zisku (zelená) a ztráty (červená)."""
     try:
         val = float(val)
         if val > 0:
@@ -83,12 +83,12 @@ if not st.session_state["prihlasen"]:
 
     with tab1:
         login_nick = st.text_input("Přezdívka (Nick / Login):").strip()
-        login_pin = st.text_input("PIN:", type="password")
+        login_pin = st.text_input("PIN (4 čísla):", type="password", max_chars=4).strip()
         if st.button("Přihlásit se"):
             zaznamy = db_uzivatele.get_all_records(value_render_option="UNFORMATTED_VALUE")
             nalezen = False
             for radek in zaznamy:
-                if str(radek.get("Nick", "")).strip().lower() == login_nick.lower() and str(radek.get("PIN", "")) == login_pin:
+                if str(radek.get("Nick", "")).strip().lower() == login_nick.lower() and str(radek.get("PIN", "")).strip() == login_pin:
                     nalezen = True
                     st.session_state["prihlasen"] = True
                     st.session_state["nick"] = str(radek.get("Nick", "")).strip()
@@ -112,7 +112,7 @@ if not st.session_state["prihlasen"]:
             reg_trida = st.text_input("Třída žáka (např. 8.A, 9.B):").strip().upper()
             tajny_kod_input = ""
             
-        reg_pin = st.text_input("Vymysli si osobní PIN:", type="password")
+        reg_pin = st.text_input("Vymysli si osobní PIN (4místné číslo):", type="password", max_chars=4, help="Zadej přesně 4 číslice, např. 1234").strip()
         
         if st.button("Zaregistrovat se"):
             zadane_heslo_ciste = tajny_kod_input.strip().strip('"').strip("'")
@@ -121,6 +121,8 @@ if not st.session_state["prihlasen"]:
             
             if not reg_nick or not reg_jmeno or not reg_pin or (not je_ucitel and not reg_trida):
                 st.warning("⚠️ Vyplň prosím všechny potřebné údaje.")
+            elif not (reg_pin.isdigit() and len(reg_pin) == 4):
+                st.error("❌ PIN musí obsahovat přesně 4 číslice (např. 1234).")
             elif je_ucitel and zadane_heslo_ciste not in povolena_hesla:
                 st.error("❌ Nesprávné učitelské heslo! Registrace jako učitel byla zamítnuta.")
             else:
@@ -219,7 +221,6 @@ elif st.session_state["role"] == "UCITEL":
                         df_zebricek = df_zebricek.sort_values(by="Celkový majetek (Kč)", ascending=False).reset_index(drop=True)
                         df_zebricek.index += 1
                         
-                        # Změna: .map() místo staršího .applymap()
                         df_styled = df_zebricek.style.map(barva_zisku_ztraty, subset=["Zisk / Ztráta (Kč)"]).format({
                             "Celkový majetek (Kč)": "{:.2f}",
                             "Zisk / Ztráta (Kč)": "{:+.2f}",
@@ -237,17 +238,20 @@ elif st.session_state["role"] == "UCITEL":
             
             if zaci_v_tride:
                 vybrany_zak_str = st.selectbox("Vyber žáka ze třídy " + vybrana_trida + ":", zaci_v_tride)
-                novy_pin = st.text_input("Nový PIN pro žáka:", value="1234")
+                novy_pin = st.text_input("Nový 4místný PIN pro žáka:", value="1234", max_chars=4)
                 
                 if st.button("Uložit nový PIN"):
-                    vybrany_nick = vybrany_zak_str.split("(")[-1].replace(")", "").strip()
-                    nicky_sloupec = [str(n).strip() for n in db_uzivatele.col_values(2)]
-                    cislo_radku = nicky_sloupec.index(vybrany_nick) + 1
-                    hlavicky = db_uzivatele.row_values(1)
-                    cislo_sloupce_pin = hlavicky.index("PIN") + 1
-                    
-                    db_uzivatele.update_cell(cislo_radku, cislo_sloupce_pin, str(novy_pin))
-                    st.success(f"✅ PIN pro žáka {vybrany_zak_str} byl změněn na {novy_pin}!")
+                    if novy_pin.isdigit() and len(novy_pin) == 4:
+                        vybrany_nick = vybrany_zak_str.split("(")[-1].replace(")", "").strip()
+                        nicky_sloupec = [str(n).strip() for n in db_uzivatele.col_values(2)]
+                        cislo_radku = nicky_sloupec.index(vybrany_nick) + 1
+                        hlavicky = db_uzivatele.row_values(1)
+                        cislo_sloupce_pin = hlavicky.index("PIN") + 1
+                        
+                        db_uzivatele.update_cell(cislo_radku, cislo_sloupce_pin, str(novy_pin))
+                        st.success(f"✅ PIN pro žáka {vybrany_zak_str} byl změněn na {novy_pin}!")
+                    else:
+                        st.error("❌ PIN musí být 4místné číslo.")
             else:
                 st.caption("V této třídě zatím nejsou žádní žáci.")
 
@@ -491,7 +495,6 @@ else:
                     df_zebricek = df_zebricek.sort_values(by="Celkový majetek (Kč)", ascending=False).reset_index(drop=True)
                     df_zebricek.index += 1
                     
-                    # Změna: .map() místo staršího .applymap()
                     df_styled = df_zebricek.style.map(barva_zisku_ztraty, subset=["Zisk / Ztráta (Kč)"]).format({
                         "Celkový majetek (Kč)": "{:.2f}",
                         "Zisk / Ztráta (Kč)": "{:+.2f}"
