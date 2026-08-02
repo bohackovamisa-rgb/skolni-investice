@@ -614,8 +614,18 @@ else:
                     st.divider()
                     st.write("### 📊 Struktura majetku")
                     df_graf = pd.DataFrame(graf_data)
+                    
                     fig = px.pie(df_graf, values="Hodnota (Kč)", names="Položka", hole=0.5, template="plotly_dark")
-                    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+                    
+                    # Úprava kontrastu textů pro Plotly v černém režimu
+                    fig.update_layout(
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        plot_bgcolor="rgba(0,0,0,0)",
+                        font=dict(color="#ffffff", size=14),
+                        legend=dict(font=dict(color="#ffffff"))
+                    )
+                    fig.update_traces(textposition='outside', textinfo='percent+label')
+                    
                     st.plotly_chart(fig, use_container_width=True)
                 
                 st.divider()
