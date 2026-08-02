@@ -8,77 +8,86 @@ from datetime import datetime
 
 # 1. Konfigurace stránky
 st.set_page_config(
-    page_title="Investiční Simulátor",
-    page_icon="⚡",
+    page_title="Školní Investiční Simulátor",
+    page_icon="📈",
     layout="centered",
     initial_sidebar_state="collapsed"
 )
 
-# 2. Vylepšený High-Tech CSS Styling
+# 2. Vylepšený High-Tech CSS Styling s vysokým kontrastem
 HIGH_TECH_CSS = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap');
     
     /* Základní temný motiv */
     .stApp {
-        background-color: #0b0e14;
-        color: #e2e8f0;
+        background-color: #0d1117;
+        color: #ffffff !important;
         font-family: 'Plus Jakarta Sans', sans-serif;
     }
 
-    /* Schovat výchozí lišty Streamlitu pro čistý vzhled */
+    /* Schovat výchozí lišty Streamlitu */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
 
     /* Nadpisy */
-    h1, h2, h3 {
-        font-family: 'JetBrains Mono', monospace !important;
-        letter-spacing: -0.5px;
+    h1, h2, h3, h4 {
+        color: #ffffff !important;
+        font-family: 'Plus Jakarta Sans', sans-serif !important;
+        font-weight: 700 !important;
+    }
+
+    /* Popisky políček (Labels) - Vše jasně bílé */
+    label, p, span, .stMarkdown {
+        color: #f0f6fc !important;
+        font-size: 1rem;
     }
 
     /* Úprava vstupních polí */
     .stTextInput input {
         background-color: #161b22 !important;
-        color: #f0f6fc !important;
-        border: 1px solid #30363d !important;
+        color: #ffffff !important;
+        border: 1px solid #484f58 !important;
         border-radius: 8px !important;
         padding: 10px 14px !important;
+        font-size: 1rem !important;
     }
     .stTextInput input:focus {
         border-color: #58a6ff !important;
-        box-shadow: 0 0 0 3px rgba(56, 139, 253, 0.25) !important;
+        box-shadow: 0 0 0 3px rgba(56, 139, 253, 0.3) !important;
     }
 
-    /* Tlačítka - High-Tech Glow Effect */
+    /* Tlačítka - Výrazná s vysokým kontrastem */
     div.stButton > button {
-        background: linear-gradient(135deg, #1f6feb 0%, #1158c7 100%) !important;
+        background: linear-gradient(135deg, #1f6feb 0%, #0d57d5 100%) !important;
         color: #ffffff !important;
-        border: 1px solid #388bfd !important;
+        border: 1px solid #58a6ff !important;
         border-radius: 8px !important;
-        font-weight: 600 !important;
-        font-family: 'JetBrains Mono', monospace !important;
+        font-weight: 700 !important;
+        font-size: 1.05rem !important;
+        padding: 10px 20px !important;
         transition: all 0.2s ease-in-out !important;
-        box-shadow: 0 4px 12px rgba(31, 111, 235, 0.2) !important;
+        box-shadow: 0 4px 12px rgba(31, 111, 235, 0.3) !important;
     }
     div.stButton > button:hover {
         background: linear-gradient(135deg, #388bfd 0%, #1f6feb 100%) !important;
-        box-shadow: 0 0 16px rgba(56, 139, 253, 0.5) !important;
-        transform: translateY(-1px);
+        box-shadow: 0 0 18px rgba(56, 139, 253, 0.6) !important;
+        transform: translateY(-2px);
     }
 
-    /* Stylování záložek (Tabs) - Bez chyb a barevných bloků */
+    /* Stylování záložek (Tabs) - Přehledný kontrast */
     .stTabs [data-baseweb="tab-list"] {
         background-color: #161b22;
         padding: 6px;
         border-radius: 10px;
         border: 1px solid #30363d;
-        gap: 4px;
+        gap: 6px;
     }
     .stTabs [data-baseweb="tab"] {
-        color: #8b949e !important;
+        color: #c9d1d9 !important;
         border-radius: 6px !important;
-        padding: 8px 16px !important;
+        padding: 10px 20px !important;
         font-weight: 600 !important;
         border: none !important;
         background-color: transparent !important;
@@ -86,27 +95,30 @@ HIGH_TECH_CSS = """
     .stTabs [aria-selected="true"] {
         background-color: #21262d !important;
         color: #58a6ff !important;
-        border: 1px solid #30363d !important;
+        border: 1px solid #58a6ff !important;
     }
 
     /* Metriky a karty */
     div[data-testid="stMetric"] {
         background: #161b22;
         border: 1px solid #30363d;
-        padding: 16px;
+        padding: 18px;
         border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+    div[data-testid="stMetricLabel"] {
+        color: #8b949e !important;
     }
     div[data-testid="stMetricValue"] {
         font-family: 'JetBrains Mono', monospace;
-        color: #58a6ff;
+        color: #58a6ff !important;
+        font-size: 1.8rem !important;
     }
 
     /* Tabulky */
     .stDataFrame {
         border: 1px solid #30363d;
         border-radius: 10px;
-        overflow: hidden;
     }
 </style>
 """
@@ -182,15 +194,13 @@ AKTIVA = {
 # --- A: OBRAZOVKA PRO NEPŘIHLÁŠENÉ ---
 # ==========================================
 if not st.session_state["prihlasen"]:
-    # Vycentrování nadpisu
-    st.markdown("<h1 style='text-align: center; color: #58a6ff; margin-bottom: 0px;'>⚡ TRADE_SIM</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: #8b949e; font-size: 0.9rem; margin-bottom: 30px;'>Školní investiční platforma s reálnými tržními daty</p>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center; color: #58a6ff; margin-bottom: 5px;'>📈 Školní Investiční Simulátor</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #c9d1d9; font-size: 1.05rem; margin-bottom: 30px;'>Vyzkoušej si obchodování na reálné burze bez rizika ztráty peněz</p>", unsafe_allow_html=True)
 
-    # Vytvoříme sloupcové rozvržení pro přesné vycentrování modulu
     col_left, col_main, col_right = st.columns([1, 2, 1])
 
     with col_main:
-        tab1, tab2 = st.tabs(["🔐 Přihlášení", "📝 Registrace"])
+        tab1, tab2 = st.tabs(["🔐 Přihlášení", "📝 Nová registrace"])
 
         with tab1:
             st.write("")
@@ -219,7 +229,7 @@ if not st.session_state["prihlasen"]:
 
         with tab2:
             st.write("")
-            reg_nick = st.text_input("Přezdívka (Login):", key="reg_nick_in").strip()
+            reg_nick = st.text_input("Přezdívka (Nick pro přihlášení):", key="reg_nick_in").strip()
             reg_jmeno = st.text_input("Celé jméno a příjmení:", key="reg_jmeno_in").strip()
             je_ucitel = st.checkbox("👩‍🏫 Účet pro UČITELE")
             
@@ -227,10 +237,10 @@ if not st.session_state["prihlasen"]:
                 reg_trida = ""
                 tajny_kod_input = st.text_input("🔐 Učitelské heslo:", type="password", key="reg_pass_in")
             else:
-                reg_trida = st.text_input("Třída (např. 8.A, 9.B):", key="reg_trida_in").strip().upper()
+                reg_trida = st.text_input("Třída žáka (např. 8.A, 9.B):", key="reg_trida_in").strip().upper()
                 tajny_kod_input = ""
                 
-            reg_pin = st.text_input("Osobní PIN (4 čísla):", type="password", max_chars=4, help="Zadej přesně 4 číslice, např. 1234", key="reg_pin_in").strip()
+            reg_pin = st.text_input("Vymysli si osobní PIN (4 čísla):", type="password", max_chars=4, help="Zadej přesně 4 číslice, např. 1234", key="reg_pin_in").strip()
             st.write("")
 
             if st.button("VYTVOŘIT ÚČET ➔", use_container_width=True):
@@ -239,7 +249,7 @@ if not st.session_state["prihlasen"]:
                 povolena_hesla = [heslo_ze_secrets, "Ucitel2026", "Ucitel123"]
                 
                 if not reg_nick or not reg_jmeno or not reg_pin or (not je_ucitel and not reg_trida):
-                    st.warning("⚠️ Vyplň všechny údaje.")
+                    st.warning("⚠️ Vyplň prosím všechny potřebné údaje.")
                 elif not (reg_pin.isdigit() and len(reg_pin) == 4):
                     st.error("❌ PIN musí mít přesně 4 číslice.")
                 elif je_ucitel and zadane_heslo_ciste not in povolena_hesla:
@@ -249,11 +259,11 @@ if not st.session_state["prihlasen"]:
                     existujici_nicky = [str(r.get("Nick", "")).strip().lower() for r in zaznamy]
                     
                     if reg_nick.lower() in existujici_nicky:
-                        st.error("⚠️ Tato přezdívka je již zabraná.")
+                        st.error("⚠️ Tato přezdívka je již zabraná. Zvol si jinou.")
                     else:
                         role_str = "UCITEL" if je_ucitel else "ZAK"
                         db_uzivatele.append_row([role_str, reg_nick, reg_jmeno, reg_trida, reg_pin, 20000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-                        st.success("🎉 Účet vytvořen! Přihlaš se.")
+                        st.success("🎉 Účet úspěšně vytvořen! Nyní se přihlaš.")
 
 # ==========================================
 # --- B: OBRAZOVKA PRO UČITELE ---
@@ -262,7 +272,7 @@ elif st.session_state["role"] == "UCITEL":
     sloupec1, sloupec2 = st.columns([3, 1])
     with sloupec1:
         st.markdown(f"<h2 style='color: #58a6ff;'>👩‍🏫 Učitelský Panel</h2>", unsafe_allow_html=True)
-        st.caption(f"Učitel: **{st.session_state['jmeno']}** | Nick: `{st.session_state['nick']}`")
+        st.write(f"Učitel: **{st.session_state['jmeno']}** | Nick: `{st.session_state['nick']}`")
     with sloupec2:
         st.write("")
         if st.button("🚪 ODHLÁSIT", use_container_width=True):
@@ -362,7 +372,7 @@ elif st.session_state["role"] == "UCITEL":
                 data_zaka = next((r for r in zaci_v_tride_seznam if str(r.get("Nick", "")).strip().lower() == vybrany_nick.lower()), None)
                 
                 if data_zaka:
-                    st.write(f"### 💼 Portfolio: **{data_zaka.get('Jmeno', '')}**")
+                    st.write(f"### 💼 Portfolio žáka: **{data_zaka.get('Jmeno', '')}**")
                     zustatek = bezpecny_float(data_zaka.get("Zustatek", 0))
                     st.write(f"💵 **Volná hotovost:** `{zustatek:.2f} Kč`")
                     
@@ -434,7 +444,7 @@ else:
     sloupec1, sloupec2 = st.columns([3, 1])
     with sloupec1:
         st.markdown(f"<h2 style='color: #58a6ff;'>Vítej, {st.session_state['jmeno']}! ⚡</h2>", unsafe_allow_html=True)
-        st.caption(f"Login: `{st.session_state['nick']}` | Třída: **{st.session_state['trida']}**")
+        st.write(f"Nick: `{st.session_state['nick']}` | Třída: **{st.session_state['trida']}**")
     with sloupec2:
         st.write("")
         if st.button("🚪 ODHLÁSIT", use_container_width=True):
