@@ -178,8 +178,9 @@ elif st.session_state["role"] == "UCITEL":
     else:
         vybrana_trida = st.selectbox("Zobrazit výsledky pro třídu:", tridy_k_zobrazeni)
         
-        tab_zebricek_ucitel, tab_sprava_ucitel = st.tabs(["🏆 Přehled a výsledky třídy", "🔑 Správa žáků (Reset PINu)"])
+        tab_zebricek_ucitel, tab_detail_zaka, tab_sprava_ucitel = st.tabs(["🏆 Přehled a výsledky třídy", "🔍 Detail a historie žáka", "🔑 Správa žáků (Reset PINu)"])
         
+        # --- TAB 1: ŽEBŘÍČEK TŘÍDY ---
         with tab_zebricek_ucitel:
             with st.spinner(f"Načítám výsledky třídy {vybrana_trida}..."):
                 try:
@@ -232,6 +233,58 @@ elif st.session_state["role"] == "UCITEL":
                 except Exception as e:
                     st.error(f"Chyba při načítání dat: {e}")
 
+        # --- TAB 2: DETAIL A HISTORIE ŽÁKA ---
+        with tab_detail_zaka:
+            zaci_v_tride_seznam = [r for r in vsechna_data if str(r.get("Trida", "")).strip().upper() == vybrana_trida and str(r.get("Role", "")).upper() != "UCITEL"]
+            
+            if zaci_v_tride_seznam:
+                zaci_moznosti = [f"{str(r.get('Jmeno', ''))} ({str(r.get('Nick', ''))})" for r in zaci_v_tride_seznam]
+                vybrany_zak_opt = st.selectbox("Vyber žáka k náhledu:", zaci_moznosti, key="detail_zak_select")
+                
+                vybrany_nick = vybrany_zak_opt.split("(")[-1].replace(")", "").strip()
+                data_zaka = next((r for r in zaci_v_tride_seznam if str(r.get("Nick", "")).strip().lower() == vybrany_nick.lower()), None)
+                
+                if data_zaka:
+                    st.subheader(f"💼 Portfolio žáka: {data_zaka.get('Jmeno', '')}")
+                    zustatek = bezpecny_float(data_zaka.get("Zustatek", 0))
+                    st.write(f"💵 **Volná hotovost:** {zustatek:.2f} Kč")
+                    
+                    st.write("**Držená aktiva:**")
+                    vlastni_aktiva = False
+                    for nazev, (_, _, db_sloupec) in AKTIVA.items():
+                        ks = bezpecny_float(data_zaka.get(db_sloupec, 0))
+                        if ks > 0:
+                            vlastni_aktiva = True
+                            st.write(f"🔸 **{nazev}**: {hezke_kusy(ks)} ks")
+                    
+                    if not vlastni_aktiva:
+                        st.caption("Žák momentálně nedrží žádná akcie/kryptoměny.")
+                    
+                    st.divider()
+                    st.subheader(f"📜 Historie obchodů žáka {vybrany_nick}")
+                    
+                    if db_transakce:
+                        try:
+                            vsechny_transakce = db_transakce.get_all_records()
+                            transakce_zaka = [t for t in vsechny_transakce if str(t.get("Jmeno", "")).strip().lower() == vybrany_nick.lower()]
+                            
+                            if transakce_zaka:
+                                df_t = pd.DataFrame(transakce_zaka)
+                                # Úprava sloupce pro přehlednější zobrazení
+                                sloupce_k_zobrazeni = [c for c in ["Typ", "Aktivum", "Kusu", "Cena_CZK"] if c in df_t.columns]
+                                df_t_clean = df_t[sloupce_k_zobrazeni]
+                                df_t_clean.columns = [c.replace("Kusu", "Kusů").replace("Cena_CZK", "Celková cena (Kč)").replace("Typ", "Typ obchodu") for c in df_t_clean.columns]
+                                st.dataframe(df_t_clean, use_container_width=True)
+                            else:
+                                st.info("Tento žák zatím neprovedl žádné obchody.")
+                        except Exception as e:
+                            st.warning(f"Nepodařilo se načíst historii obchodů: {e}")
+                    else:
+                        st.caption("List 'Transakce' není v databázi k dispozici.")
+            else:
+                st.info(f"Ve třídě {vybrana_trida} zatím nejsou žádní žáci.")
+
+        # --- TAB 3: SPRÁVA ŽÁKŮ ---
         with tab_sprava_ucitel:
             st.subheader("🔑 Obnovení zapomenutého PINu")
             zaci_v_tride = [f"{str(r.get('Jmeno', ''))} ({str(r.get('Nick', ''))})" for r in vsechna_data if str(r.get("Trida", "")).strip().upper() == vybrana_trida and str(r.get("Role", "")).upper() != "UCITEL"]
@@ -440,7 +493,7 @@ else:
                 if db_transakce:
                     try:
                         vsechny_transakce = db_transakce.get_all_records()
-                        moje_transakce = [t for t in vsechny_transakce if str(t.get("Jmeno", "")) == st.session_state["nick"]]
+                        moje_transakce = [t for t in vsechny_transakce if str(t.get("Jmeno", "")).strip().lower() == st.session_state["nick"].lower()]
                         
                         if moje_transakce:
                             df_transakce = pd.DataFrame(moje_transakce)[["Typ", "Aktivum", "Kusu", "Cena_CZK"]]
