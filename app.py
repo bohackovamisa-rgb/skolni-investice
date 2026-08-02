@@ -2,6 +2,9 @@ import streamlit as st
 import yfinance as yf
 import gspread
 import json
+import pandas as pd
+import plotly.express as px
+from datetime import datetime
 
 st.set_page_config(page_title="Investiční simulátor", layout="centered")
 
@@ -28,10 +31,19 @@ if "prihlasen" not in st.session_state:
 def pripojit_databazi():
     tajemstvi = json.loads(st.secrets["google_credentials"])
     client = gspread.service_account_from_dict(tajemstvi)
-    return client.open("Skolni_Investice_DB").sheet1
+    soubor = client.open("Skolni_Investice_DB")
+    sheet_uzivatele = soubor.sheet1
+    
+    # Pokus o připojení k druhému listu s transakcemi
+    try:
+        sheet_transakce = soubor.worksheet("Transakce")
+    except:
+        sheet_transakce = None
+        
+    return sheet_uzivatele, sheet_transakce
 
 try:
-    db = pripojit_databazi()
+    db_uzivatele, db_transakce = pripojit_databazi()
 except Exception as e:
     st.error(f"❌ Chyba při připojování databáze: {e}")
     st.stop()
@@ -60,7 +72,7 @@ if not st.session_state["prihlasen"]:
         login_jmeno = st.text_input("Jméno (přesně jako v tabulce):")
         login_pin = st.text_input("PIN:", type="password")
         if st.button("Přihlásit se"):
-            zaznamy = db.get_all_records(value_render_option="UNFORMATTED_VALUE")
+            zaznamy = db_uzivatele.get_all_records(value_render_option="UNFORMATTED_VALUE")
             nalezen = False
             for radek in zaznamy:
                 if str(radek.get("Jmeno", "")) == login_jmeno and str(radek.get("PIN", "")) == login_pin:
@@ -76,16 +88,15 @@ if not st.session_state["prihlasen"]:
         reg_jmeno = st.text_input("Tvé jméno:")
         reg_pin = st.text_input("Vymysli si PIN:", type="password")
         if st.button("Zaregistrovat"):
-            zaznamy = db.get_all_records(value_render_option="UNFORMATTED_VALUE")
+            zaznamy = db_uzivatele.get_all_records(value_render_option="UNFORMATTED_VALUE")
             if reg_jmeno in [str(r.get("Jmeno", "")) for r in zaznamy]:
                 st.error("Toto jméno už existuje.")
             else:
-                # Noví žáci dostanou do startu 20 000 Kč
-                db.append_row([reg_jmeno, reg_pin, 20000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+                db_uzivatele.append_row([reg_jmeno, reg_pin, 20000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
                 st.success("Účet vytvořen s částkou 20 000 Kč! Nyní se můžeš přihlásit.")
 
 # ==========================================
-# --- B: OBRAZOVKA PRO PŘIHLÁŠENÉ (BURZA) ---
+# --- B: OBRAZOVKA PRO PŘIHLÁŠENÉ ---
 # ==========================================
 else:
     sloupec1, sloupec2 = st.columns([3, 1])
@@ -97,12 +108,12 @@ else:
             st.rerun()
 
     st.divider()
-    tab_burza, tab_portfolio = st.tabs(["📈 Burza (Nákup/Prodej)", "💼 Moje Portfolio"])
+    tab_burza, tab_portfolio, tab_zebricek = st.tabs(["📈 Burza (Nákup/Prodej)", "💼 Moje Portfolio", "🏆 Žebříček třídy"])
     
-    vsechna_data = db.get_all_records(value_render_option="UNFORMATTED_VALUE")
+    vsechna_data = db_uzivatele.get_all_records(value_render_option="UNFORMATTED_VALUE")
     moje_data = next((r for r in vsechna_data if str(r.get("Jmeno", "")) == st.session_state["jmeno"]), None)
     
-    # ---------------- ZÁLOŽKA: BURZA ----------------
+    # ---------------- ZÁLOŽKA 1: BURZA ----------------
     with tab_burza:
         st.metric(label="Dostupné peníze na účtu", value=f"{st.session_state['zustatek']:.2f} Kč")
         
@@ -149,13 +160,20 @@ else:
                                     novy_zustatek = round(st.session_state["zustatek"] - cena_koupit, 2)
                                     novy_stav_aktiva = round(stav_aktiva_ted + pocet_koupit, 4)
                                     
-                                    jmena_sloupec = db.col_values(1)
+                                    jmena_sloupec = db_uzivatele.col_values(1)
                                     cislo_radku = jmena_sloupec.index(st.session_state["jmeno"]) + 1
-                                    hlavicky = db.row_values(1)
+                                    hlavicky = db_uzivatele.row_values(1)
                                     cislo_sloupce_aktiva = hlavicky.index(sloupec_db) + 1
                                     
-                                    db.update_cell(cislo_radku, 3, novy_zustatek) 
-                                    db.update_cell(cislo_radku, cislo_sloupce_aktiva, novy_stav_aktiva)
+                                    db_uzivatele.update_cell(cislo_radku, 3, novy_zustatek) 
+                                    db_uzivatele.update_cell(cislo_radku, cislo_sloupce_aktiva, novy_stav_aktiva)
+                                    
+                                    # Zápis historie do listu Transakce
+                                    if db_transakce:
+                                        try:
+                                            db_transakce.append_row([st.session_state["jmeno"], "NÁKUP", vybrane_aktivum, pocet_koupit, cena_koupit])
+                                        except:
+                                            pass
                                     
                                     st.session_state["zustatek"] = novy_zustatek
                                     st.success("✅ Nákup proběhl úspěšně!")
@@ -176,13 +194,20 @@ else:
                                 novy_zustatek = round(st.session_state["zustatek"] + cena_prodat, 2)
                                 novy_stav_aktiva = round(stav_aktiva_ted - pocet_prodat, 4)
                                 
-                                jmena_sloupec = db.col_values(1)
+                                jmena_sloupec = db_uzivatele.col_values(1)
                                 cislo_radku = jmena_sloupec.index(st.session_state["jmeno"]) + 1
-                                hlavicky = db.row_values(1)
+                                hlavicky = db_uzivatele.row_values(1)
                                 cislo_sloupce_aktiva = hlavicky.index(sloupec_db) + 1
                                 
-                                db.update_cell(cislo_radku, 3, novy_zustatek)
-                                db.update_cell(cislo_radku, cislo_sloupce_aktiva, novy_stav_aktiva)
+                                db_uzivatele.update_cell(cislo_radku, 3, novy_zustatek)
+                                db_uzivatele.update_cell(cislo_radku, cislo_sloupce_aktiva, novy_stav_aktiva)
+                                
+                                # Zápis historie do listu Transakce
+                                if db_transakce:
+                                    try:
+                                        db_transakce.append_row([st.session_state["jmeno"], "PRODEJ", vybrane_aktivum, pocet_prodat, cena_prodat])
+                                    except:
+                                        pass
                                 
                                 st.session_state["zustatek"] = novy_zustatek
                                 st.success("✅ Prodej proběhl úspěšně!")
@@ -191,7 +216,7 @@ else:
             except Exception as e:
                 st.warning(f"Chyba při stahování dat: {e}")
 
-    # ---------------- ZÁLOŽKA: PORTFOLIO ----------------
+    # ---------------- ZÁLOŽKA 2: PORTFOLIO ----------------
     with tab_portfolio:
         st.subheader("💼 Tvůj majetek")
         
@@ -204,6 +229,9 @@ else:
                 
                 hodnota_aktiv_celkem = 0.0
                 ma_neco = False
+                
+                # Příprava dat pro koláčový graf
+                graf_data = {"Položka": ["Hotovost"], "Hodnota (Kč)": [st.session_state["zustatek"]]}
                 
                 st.write("**Aktuálně držíš tyto cenné papíry a krypto:**")
                 
@@ -219,6 +247,9 @@ else:
                             hodnota_polozky = round(mnozstvi * cena_aktiva, 2)
                             hodnota_aktiv_celkem += hodnota_polozky
                             
+                            graf_data["Položka"].append(nazev)
+                            graf_data["Hodnota (Kč)"].append(hodnota_polozky)
+                            
                             st.write(f"🔸 **{nazev}**: {hezke_kusy(mnozstvi)} ks *(hodnota cca {hodnota_polozky:.2f} Kč)*")
                         except:
                             st.write(f"🔸 **{nazev}**: {hezke_kusy(mnozstvi)} ks *(cenu nelze právě teď načíst)*")
@@ -229,7 +260,6 @@ else:
                 st.divider()
                 
                 celkovy_majetek = round(st.session_state["zustatek"] + hodnota_aktiv_celkem, 2)
-                # Zisk/Ztráta se po úpravě počítá oproti 20 000 Kč
                 zisk_ztrata = round(celkovy_majetek - 20000.0, 2)
                 
                 st.metric(
@@ -237,3 +267,76 @@ else:
                     value=f"{celkovy_majetek:.2f} Kč", 
                     delta=f"{zisk_ztrata:.2f} Kč od začátku"
                 )
+                
+                # --- VIZUALIZACE: KOLÁČOVÝ GRAF DIVERZIFIKACE ---
+                if ma_neco:
+                    st.divider()
+                    st.subheader("📊 Diverzifikace portfolia")
+                    df_graf = pd.DataFrame(graf_data)
+                    fig = px.pie(df_graf, values="Hodnota (Kč)", names="Položka", hole=0.4)
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                # --- HISTORIE TRANSAKCÍ ---
+                st.divider()
+                st.subheader("📜 Tvoje historie obchodů")
+                if db_transakce:
+                    try:
+                        vsechny_transakce = db_transakce.get_all_records()
+                        moje_transakce = [t for t in vsechny_transakce if str(t.get("Jmeno", "")) == st.session_state["jmeno"]]
+                        
+                        if moje_transakce:
+                            df_transakce = pd.DataFrame(moje_transakce)[["Typ", "Aktivum", "Kusu", "Cena_CZK"]]
+                            df_transakce.columns = ["Typ obchodu", "Aktivum", "Kusů", "Celková cena (Kč)"]
+                            st.dataframe(df_transakce, use_container_width=True)
+                        else:
+                            st.caption("Zatím jsi neprovedl(a) žádné obchody.")
+                    except:
+                        st.caption("Záznamy historie se nepodařilo načíst.")
+                else:
+                    st.caption("⚠️ Pro zobrazení historie transakcí přidej do Google Tabulky list s názvem 'Transakce'.")
+
+    # ---------------- ZÁLOŽKA 3: ŽEBŘÍČEK TŘÍDY ----------------
+    with tab_zebricek:
+        st.subheader("🏆 Průběžné pořadí třídy")
+        
+        with st.spinner("Spočítám aktuální majetek všech spolužáků..."):
+            try:
+                # Stáhneme aktuální kurzy pro ocenění všech žáků
+                kurz_usd = yf.Ticker("CZK=X").history(period="1d")['Close'].iloc[-1]
+                ceny_aktiv = {}
+                for nazev, (ticker, mena, _) in AKTIVA.items():
+                    c = yf.Ticker(ticker).history(period="1d")['Close'].iloc[-1]
+                    if mena == "USD":
+                        c *= kurz_usd
+                    ceny_aktiv[nazev] = c
+                
+                zebricek_data = []
+                
+                for radek in vsechna_data:
+                    jmeno_zaka = str(radek.get("Jmeno", ""))
+                    if not jmeno_zaka:
+                        continue
+                    
+                    zustatek_zaka = bezpecny_float(radek.get("Zustatek", 0))
+                    majetek_zaka = zustatek_zaka
+                    
+                    for nazev, (_, _, db_sloupec) in AKTIVA.items():
+                        ks = bezpecny_float(radek.get(db_sloupec, 0))
+                        if ks > 0 and nazev in ceny_aktiv:
+                            majetek_zaka += (ks * ceny_aktiv[nazev])
+                    
+                    zisk_zaka = majetek_zaka - 20000.0
+                    zebricek_data.append({
+                        "Žák": jmeno_zaka,
+                        "Celkový majetek (Kč)": round(majetek_zaka, 2),
+                        "Zisk / Ztráta (Kč)": round(zisk_zaka, 2)
+                    })
+                
+                df_zebricek = pd.DataFrame(zebricek_data)
+                df_zebricek = df_zebricek.sort_values(by="Celkový majetek (Kč)", ascending=False).reset_index(drop=True)
+                df_zebricek.index += 1  # Pořadí od 1. místa
+                
+                st.dataframe(df_zebricek, use_container_width=True)
+                
+            except Exception as e:
+                st.error(f"Při sestavování žebříčku došlo k chybě: {e}")
