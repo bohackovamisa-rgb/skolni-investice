@@ -19,6 +19,18 @@ def hezke_kusy(hodnota):
         return f"{int(hodnota)}"
     return f"{hodnota}"
 
+def barva_zisku_ztraty(val):
+    """Pomocná funkce pro barevné odlišení zisku (zelená) a ztráty (červená) v tabulce."""
+    try:
+        val = float(val)
+        if val > 0:
+            return 'background-color: #d4edda; color: #155724; font-weight: bold;'
+        elif val < 0:
+            return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
+    except (ValueError, TypeError):
+        pass
+    return ''
+
 # --- PAMĚŤ APLIKACE ---
 if "prihlasen" not in st.session_state:
     st.session_state["prihlasen"] = False
@@ -119,7 +131,6 @@ if not st.session_state["prihlasen"]:
                     st.error("⚠️ Tato přezdívka (Nick) už je zabraná. Zvol si prosím jinou.")
                 else:
                     role_str = "UCITEL" if je_ucitel else "ZAK"
-                    # Sloupce: Role, Nick, Jmeno, Trida, PIN, Zustatek, AAPL, TSLA...
                     db_uzivatele.append_row([role_str, reg_nick, reg_jmeno, reg_trida, reg_pin, 20000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
                     st.success("Účet úspěšně vytvořen! Nyní se můžeš přihlásit na záložce Přihlášení.")
 
@@ -207,7 +218,14 @@ elif st.session_state["role"] == "UCITEL":
                         df_zebricek = pd.DataFrame(zebricek_data)
                         df_zebricek = df_zebricek.sort_values(by="Celkový majetek (Kč)", ascending=False).reset_index(drop=True)
                         df_zebricek.index += 1
-                        st.dataframe(df_zebricek, use_container_width=True)
+                        
+                        # --- BAREVNÉ ZVÝRAZNĚNÍ TABULKY UČITELE ---
+                        df_styled = df_zebricek.style.applymap(barva_zisku_ztraty, subset=["Zisk / Ztráta (Kč)"]).format({
+                            "Celkový majetek (Kč)": "{:.2f}",
+                            "Zisk / Ztráta (Kč)": "{:+.2f}",
+                            "Volná hotovost (Kč)": "{:.2f}"
+                        })
+                        st.dataframe(df_styled, use_container_width=True)
                     else:
                         st.info(f"Ve třídě {vybrana_trida} zatím nejsou zaregistrovaní žádní žáci.")
                 except Exception as e:
@@ -222,9 +240,8 @@ elif st.session_state["role"] == "UCITEL":
                 novy_pin = st.text_input("Nový PIN pro žáka:", value="1234")
                 
                 if st.button("Uložit nový PIN"):
-                    # Extrahujeme nick z textu "Jmeno (Nick)"
                     vybrany_nick = vybrany_zak_str.split("(")[-1].replace(")", "").strip()
-                    nicky_sloupec = [str(n).strip() for n in db_uzivatele.col_values(2)] # Sloupec B je Nick
+                    nicky_sloupec = [str(n).strip() for n in db_uzivatele.col_values(2)]
                     cislo_radku = nicky_sloupec.index(vybrany_nick) + 1
                     hlavicky = db_uzivatele.row_values(1)
                     cislo_sloupce_pin = hlavicky.index("PIN") + 1
@@ -300,7 +317,7 @@ else:
                                     novy_zustatek = round(st.session_state["zustatek"] - cena_koupit, 2)
                                     novy_stav_aktiva = round(stav_aktiva_ted + pocet_koupit, 4)
                                     
-                                    nicky_sloupec = [str(n).strip() for n in db_uzivatele.col_values(2)] # Sloupec B je Nick
+                                    nicky_sloupec = [str(n).strip() for n in db_uzivatele.col_values(2)]
                                     cislo_radku = nicky_sloupec.index(st.session_state["nick"]) + 1
                                     hlavicky = db_uzivatele.row_values(1)
                                     cislo_sloupce_aktiva = hlavicky.index(sloupec_db) + 1
@@ -473,7 +490,13 @@ else:
                     df_zebricek = pd.DataFrame(zebricek_data)
                     df_zebricek = df_zebricek.sort_values(by="Celkový majetek (Kč)", ascending=False).reset_index(drop=True)
                     df_zebricek.index += 1
-                    st.dataframe(df_zebricek, use_container_width=True)
+                    
+                    # --- BAREVNÉ ZVÝRAZNĚNÍ TABULKY ŽÁKŮ ---
+                    df_styled = df_zebricek.style.applymap(barva_zisku_ztraty, subset=["Zisk / Ztráta (Kč)"]).format({
+                        "Celkový majetek (Kč)": "{:.2f}",
+                        "Zisk / Ztráta (Kč)": "{:+.2f}"
+                    })
+                    st.dataframe(df_styled, use_container_width=True)
                 else:
                     st.info("V tvé třídě zatím nikdo jiný není.")
                 
