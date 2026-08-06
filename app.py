@@ -159,7 +159,14 @@ if "prihlasen" not in st.session_state:
 # --- PŘIPOJENÍ K DATABÁZI ---
 @st.cache_resource
 def pripojit_databazi():
-    tajemstvi = json.loads(st.secrets["google_credentials"])
+    raw_creds = st.secrets["google_credentials"]
+    
+    # Bezpečné rozlišení textového JSONu od TOML slovníku
+    if isinstance(raw_creds, str):
+        tajemstvi = json.loads(raw_creds)
+    else:
+        tajemstvi = dict(raw_creds)
+        
     client = gspread.service_account_from_dict(tajemstvi)
     soubor = client.open("Skolni_Investice_DB")
     sheet_uzivatele = soubor.sheet1
